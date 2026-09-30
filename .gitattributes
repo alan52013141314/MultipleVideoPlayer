@@ -1,0 +1,8 @@
+# Preserve Windows batch parsing after clone/checkout.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.py text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+*.toml text eol=lf
+*.ps1 text eol=crlf

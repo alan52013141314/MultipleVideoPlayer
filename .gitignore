@@ -1,0 +1,38 @@
+# Local installations and downloads
+/downloads/
+/VideoPlayer/.venv/
+/VideoPlayer/build/
+/VideoPlayer/dist/
+/VideoPlayer/upstream-portable/
+/VideoPlayer/current-release.txt
+/VideoPlayer/current-release.txt.pending
+/VideoPlayer/SHA256SUMS.txt
+*.zip
+*.7z
+*.exe
+*.dll
+*.lnk
+
+# User media, settings and generated verification evidence
+/verification/
+/VideoPlayer/src/verification/
+portable_data/
+*.mp4
+*.mkv
+*.avi
+*.mov
+*.webm
+*.log
+.env
+.env.*
+!.env.example
+
+# Development caches and original checkout metadata
+**/.git/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+.venv/
+.idea/
+.vscode/

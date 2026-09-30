@@ -1,0 +1,18 @@
+GridPlayer Workspace 0.5.5-local2
+Upstream: https://github.com/vzhd1701/gridplayer
+Tag: v0.5.5
+Commit: da2a649fcbcb8f1ab945353f090befca53f8725f
+License: GPL-3.0-or-later; see LICENSE-GridPlayer.txt.
+Modified source lives in ../src within the MultipleVideoPlayer/VideoPlayer project.
+Changes: workspace_state.py, workspace_window.py, workspace_launcher.py,
+workspace.spec, utils/app_dir.py; tests/scripts and reproducible build.ps1.
+Per-cell display modes also extend params/static.py, utils/aspect_calc.py,
+utils/qt.py and the VLC video frame widgets, preserving upstream playback.
+Click-to-seek and popup audio controls: widgets/click_slider.py and workspace_window.py.
+Release identification: workspace_version.py; project launcher: Start-Player.cmd.
+libVLC binaries and plugins are copied from the official GridPlayer v0.5.5
+win64 portable package (libVLC 3.0.21). VLC source and licensing information:
+https://www.videolan.org/vlc/download-sources.html
+https://www.videolan.org/legal.html
+The modified source is retained in the accompanying local project.
+

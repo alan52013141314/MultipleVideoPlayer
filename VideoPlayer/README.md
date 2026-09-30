@@ -1,0 +1,36 @@
+# 多格影片播放器
+
+在專案中執行 `Start-Player.cmd`；它會選用已安裝的最新版。此版視窗標題顯示 `0.5.5-local2`。若舊播放器仍開啟，請先正常關閉，再啟動。
+也可把 ZIP 解壓到可寫入資料夾，執行其中的 `GridPlayerWorkspace.exe`。
+不需要安裝 Python 或 VLC。請保留 exe、_internal、libVLC 與 portable_data 在一起。
+
+- 初次六格；「＋ 新增格」最多十二格，每格右上 × 移除該格。
+- 拖入本機影片到目標格即播放；也可拖入資料夾，背景找出該資料夾及子資料夾的影片，依相對路徑自然排序並播放第一條。每個檔案／資料夾各佔一格，多個來源依格子編號向後放，超出數量會提示。
+- ⏮／⏭ 依該格清單切換，最後一條往後回到第一條，第一條往前回到最後一條。直接拖影片時清單取同層影片；拖資料夾時清單包含子資料夾。換片清空該格 AB，保留該格音量及畫面模式。
+- 標題顯示清單位置與總數；清單及目前影片隨 preset 保存。重新拖入來源才更新清單，空資料夾／讀取失敗會提示並保留原影片。為避免循環掃描，不追蹤資料夾捷徑、符號連結或 junction。
+- 時間軸可直接點擊跳到對應位置，也可拖曳定位，保留原本播放／暫停狀態。▶／Ⅱ 播放暫停。A 記頭、B 記尾，合法兩端齊全才循環；「清除」取消區間。設定 AB 時仍限制在該區間，跳到區間外會回到 A。
+- 滑鼠移入格子才顯示該格按鈕與時間軸，移出即隱藏。控制列覆蓋在影片上；影片始終使用整格空間，顯示控制列不會擠壓或縮小影片。拖曳控制期間保持顯示至放開。
+- 播放按鈕旁的「音量 100%」是此格的小型音量控制，點開可調滑桿、直接輸入 0–100% 或切換靜音。音量不佔常駐整行；各格獨立，「全部靜音」解除後保留各格原設定。
+- 每格「畫面」選單：Fit 完整顯示（允許黑邊）、Fill 等比例填滿（裁切）、符合寬度、符合高度、Stretch 拉伸填滿、1:1 原始像素。除 Stretch 外均保留比例；1:1 對應顯示器實際像素，置中後超出部分裁切，小於格子時保留黑邊。
+- 畫面模式只影響該格，換片沿用，並隨 preset／「上一次」保存；顯示模式選單同樣在滑鼠移入時覆蓋影片。
+- 每格右上選橫跨／縱跨／2×2，按編號重新排放且不重疊；空間不足可捲動。
+- 無邊框、全螢幕分開控制。F11 切換全螢幕，Esc 退出。無邊框仍可按「關閉」。
+- 「另存新名稱」建立快照；「載入」恢復且暫停；「更新選定項目」才覆蓋自訂快照。
+- 正常關閉自動覆蓋「上一次」，下次自動恢復並暫停；自訂 preset 不受影響。
+- 專案啟動入口固定使用 `dist\GridPlayerWorkspace\portable_data` 保存設定，更新版本不搬移或覆蓋 preset；獨立 ZIP 則使用 exe 同層 `portable_data`。備份對應資料夾即可備份 preset。影片只保存路徑，搬移影片後會標示缺失，不會改用同名影片。
+
+本程式改造自 GridPlayer v0.5.5，保留 Python/PyQt5/libVLC 多程序播放架構。
+使用本機影片，沒有 HTTP 伺服器或遠端控制。最多十二格不代表十二路任意 4K 都能流暢。
+
+## 重建
+
+開發環境 Python 3.12。以下指令的工作目錄須為 `VideoPlayer`。
+
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\python -m pip install -r requirements-lock.txt
+```
+
+從 [GridPlayer v0.5.5 官方 release](https://github.com/vzhd1701/gridplayer/releases/tag/v0.5.5) 取得 Windows portable 套件，解壓為 `upstream-portable\GridPlayer`，確認有 `libVLC\libvlc.dll` 及 plugins，保留官方隨附授權資料。使用允許執行本地開發腳本的 PowerShell 執行 `build.ps1`；不需更改系統全域執行政策。建置會產生本機版本指向與 portable_data。
+版本統一取自 `src\gridplayer\workspace_version.py`，用於視窗標題及 ZIP 名稱。建置完成後安裝至新的版本資料夾，再更新 `current-release.txt`，讓 `Start-Player.cmd` 下次啟動選用新版。
+測試：`.venv\Scripts\python -m pytest src\tests\test_workspace.py -q`。
