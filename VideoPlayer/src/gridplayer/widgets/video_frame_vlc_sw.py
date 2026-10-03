@@ -288,6 +288,19 @@ class VideoFrameVLCSW(VideoFrameVLCProcess):
         if super().adjust_view():
             return
 
+        if self._workspace_pan:
+            source = self._videoitem.boundingRect()
+            if source.isEmpty():
+                return
+            target = self.workspace_video_rect()
+            fx, fy = target.width() / source.width(), target.height() / source.height()
+            self.video_surface.resetTransform()
+            self.video_surface.setSceneRect(source)
+            self.video_surface.scale(fx, fy)
+            self.video_surface.centerOn(source.center().x() - self._pan[0] / fx,
+                                        source.center().y() - self._pan[1] / fy)
+            return
+
         if self._aspect in (VideoAspect.WIDTH, VideoAspect.HEIGHT, VideoAspect.ORIGINAL):
             rect = self._videoitem.boundingRect()
             if rect.isEmpty():

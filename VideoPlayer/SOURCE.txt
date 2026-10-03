@@ -1,9 +1,11 @@
-GridPlayer Workspace 0.5.5-local2
+GridPlayer Workspace 0.5.5-local3
 Upstream: https://github.com/vzhd1701/gridplayer
 Tag: v0.5.5
 Commit: da2a649fcbcb8f1ab945353f090befca53f8725f
 License: GPL-3.0-or-later; see LICENSE-GridPlayer.txt.
 Modified source lives in ../src within the MultipleVideoPlayer/VideoPlayer project.
+Source repository: https://github.com/alan52013141314/MultipleVideoPlayer
+Local modifications through 2026-10-04; see PR-007 for seek, loop and pan changes.
 Changes: workspace_state.py, workspace_window.py, workspace_launcher.py,
 workspace.spec, utils/app_dir.py; tests/scripts and reproducible build.ps1.
 Per-cell display modes also extend params/static.py, utils/aspect_calc.py,

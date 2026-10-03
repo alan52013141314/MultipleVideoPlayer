@@ -20,6 +20,7 @@ class CellState(BaseModel):
     video: Video | None = None
     playlist: list[str] = Field(default_factory=list)
     source_folder: str | None = None
+    loop_suspended: bool = False
 
 
 class WorkspaceState(BaseModel):

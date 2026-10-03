@@ -1,13 +1,13 @@
 """Desktop controls around upstream VideoBlock and its VLC process manager."""
 from pathlib import Path
 
-from PyQt5.QtCore import Qt, QTimer, QPoint, QRect, pyqtSignal, QObject, QRunnable, QThreadPool
+from PyQt5.QtCore import Qt, QTimer, QPoint, QRect, QEvent, QSettings, pyqtSignal, QObject, QRunnable, QThreadPool
 from PyQt5.QtGui import QKeySequence, QCursor, QRegion
 from PyQt5.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFrame, QGridLayout, QHBoxLayout,
     QInputDialog, QLabel, QMainWindow, QMessageBox, QPushButton, QScrollArea,
     QShortcut, QSizePolicy, QSpinBox, QVBoxLayout, QWidget, QFileDialog,
-    QToolButton, QMenu, QWidgetAction,
+    QToolButton, QMenu, QWidgetAction, QDoubleSpinBox, QAbstractSpinBox, QLineEdit, QTextEdit, QPlainTextEdit,
 )
 
 from gridplayer.models.video import Video
@@ -41,7 +41,12 @@ class WorkspaceBlock(VideoBlock):
 
     def __init__(self, *args, **kwargs):
         self.global_muted = False
+        self.loop_suspended = False
+        self.scrubbing = False
+        self._pan_position = None
         super().__init__(*args, **kwargs)
+        self.setMouseTracking(True)
+        self.video_driver.enable_workspace_pan()
 
     def init_overlay(self):
         # The cell owns hover controls above the native VLC video surface.
@@ -55,7 +60,48 @@ class WorkspaceBlock(VideoBlock):
     @property
     def loop_enabled(self):
         v = self.video_params
-        return v is not None and v.loop_start is not None and v.loop_end is not None
+        return (v is not None and v.loop_start is not None and v.loop_end is not None
+                and not self.loop_suspended and not self.scrubbing)
+
+    def user_seek(self, target):
+        if not self.is_video_initialized:
+            return
+        target = max(0, min(round(target), max(0, self.video_driver.length - 1)))
+        v = self.video_params
+        if v.loop_start is not None and v.loop_end is not None:
+            self.loop_suspended = not v.loop_start <= target <= v.loop_end
+        self.video_driver.set_time(target)
+        self.time = target
+
+    def time_changed(self, new_time):
+        # Decoder callbacks from an earlier seek must not snap a held slider back.
+        if not self.scrubbing:
+            super().time_changed(new_time)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MiddleButton:
+            self._pan_position = event.globalPos()
+            self.setCursor(Qt.ClosedHandCursor)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._pan_position is not None:
+            delta = event.globalPos() - self._pan_position
+            self._pan_position = event.globalPos()
+            self.video_driver.pan_by(delta.x(), delta.y())
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MiddleButton and self._pan_position is not None:
+            self._pan_position = None
+            self.unsetCursor()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
 
     @property
     def loop_start(self):
@@ -167,7 +213,13 @@ class VideoCell(QFrame):
         self.seekbar.setToolTip("點擊跳至該位置，或拖曳滑桿定位")
         self.seekbar.setRange(0, 10000)
         self.seekbar.setEnabled(False)
+        self.seekbar.value_text = lambda value: f"{clock(value)}.{value % 1000:03}"
+        self.seekbar.sliderPressed.connect(self.begin_seek)
+        self.seekbar.valueChanged.connect(self.preview_seek)
         self.seekbar.sliderReleased.connect(self.seek)
+        self.seek_timer = QTimer(self)
+        self.seek_timer.setSingleShot(True)
+        self.seek_timer.timeout.connect(self.commit_seek)
         layout.addWidget(self.seekbar)
         controls = QHBoxLayout()
         controls.setSpacing(3)
@@ -232,8 +284,13 @@ class VideoCell(QFrame):
         view.addWidget(self.display_mode, 1)
         layout.addLayout(view)
         self.markers = QLabel("A —   B —")
+        self.markers.setWordWrap(True)
         layout.addWidget(self.time_label)
-        layout.addWidget(self.markers)
+        loop_row = QHBoxLayout()
+        loop_row.addWidget(self.markers, 1)
+        self.back_to_loop = button("回到循環", self.resume_loop, "Back to looping：回到 A 並恢復區間循環")
+        loop_row.addWidget(self.back_to_loop)
+        layout.addLayout(loop_row)
         self.refresh()
         if state.video is not None:
             self.load(state.video, paused=True)
@@ -247,6 +304,8 @@ class VideoCell(QFrame):
         viewport = self.owner.viewport
         clip = cell_rect.intersected(QRect(viewport.mapToGlobal(QPoint()), viewport.size()))
         hovered = clip.contains(QCursor.pos())
+        if hovered and active:
+            self.owner.last_hovered_cell = self
         visible = (self.isVisible() and not self.owner.isMinimized() and
                    (active or popup) and not QApplication.activeModalWidget() and
                    (hovered or popup or dragging))
@@ -287,6 +346,8 @@ class VideoCell(QFrame):
         ready = self.block is not None and self.block.is_video_initialized and not self.block._is_error
         for control in (self.play, self.head, self.tail, self.seekbar):
             control.setEnabled(ready)
+        if ready:
+            self.seekbar.setMaximum(max(1, self.block.video_driver.length - 1))
         self.clear.setEnabled(video is not None)
         for control, direction in ((self.previous, -1), (self.next, 1)):
             try:
@@ -314,7 +375,10 @@ class VideoCell(QFrame):
     def update_markers(self):
         v = self.state.video
         enabled = v and v.loop_start is not None and v.loop_end is not None
-        self.markers.setText(f"A {clock(v.loop_start if v else None)}   B {clock(v.loop_end if v else None)}" + ("   ↻ 區間循環" if enabled else ""))
+        suspended = self.block.loop_suspended if self.block else self.state.loop_suspended
+        self.state.loop_suspended = suspended
+        self.back_to_loop.setEnabled(bool(enabled and self.block and self.block.is_video_initialized))
+        self.markers.setText(f"A {clock(v.loop_start if v else None)}   B {clock(v.loop_end if v else None)}" + ("   暫離循環" if enabled and suspended else "   ↻" if enabled else ""))
 
     def set_span(self, index):
         self.state.rows, self.state.cols = [(1,1), (1,2), (2,1), (2,2)][index]
@@ -326,6 +390,9 @@ class VideoCell(QFrame):
             self.owner.drop_files(self.owner.cells.index(self), paths)
 
     def load(self, video, paused=False):
+        same_source = self.state.video is not None and str(self.state.video.uri) == str(video.uri)
+        if not same_source:
+            self.state.loop_suspended = False
         self.dispose()
         self.state.video = video.model_copy(deep=True)
         v = self.state.video
@@ -341,6 +408,7 @@ class VideoCell(QFrame):
         self.block = WorkspaceBlock(video_driver=self.owner.driver.video_driver(), context=self.owner.context, parent=self)
         self.block.setAttribute(Qt.WA_DeleteOnClose)
         self.block.global_muted = self.owner.global_mute.isChecked()
+        self.block.loop_suspended = self.state.loop_suspended
         self.surface.addWidget(self.block)
         self.block.time_change.connect(self.update_time)
         self.block.is_paused_change.connect(self.update_play)
@@ -352,6 +420,7 @@ class VideoCell(QFrame):
         self.refresh()
 
     def dispose(self):
+        self.seek_timer.stop()
         self.volume_menu.hide()
         self.top_panel.hide()
         self.bottom_panel.hide()
@@ -367,7 +436,8 @@ class VideoCell(QFrame):
 
     def update_time(self, time, duration):
         if not self.seekbar.isSliderDown():
-            self.seekbar.setValue(round(time / duration * 10000) if duration else 0)
+            self.seekbar.setMaximum(max(1, duration - 1))
+            self.seekbar.setValue(time)
         self.time_label.setText(f"{clock(time)} / {clock(duration)}")
 
     def update_play(self, paused):
@@ -377,9 +447,29 @@ class VideoCell(QFrame):
         if self.block and self.block.is_video_initialized:
             self.block.play_pause()
 
-    def seek(self):
+    def begin_seek(self):
+        if self.block:
+            self.block.scrubbing = True
+
+    def preview_seek(self):
+        if self.seekbar.isSliderDown() and not self.seek_timer.isActive():
+            self.seek_timer.start(50)
+
+    def commit_seek(self):
         if self.block and self.block.is_video_initialized:
-            self.block.seek_percent(self.seekbar.value() / 10000)
+            self.block.user_seek(self.seekbar.value())
+            self.update_markers()
+
+    def seek(self):
+        self.seek_timer.stop()
+        self.commit_seek()
+        if self.block:
+            self.block.scrubbing = False
+
+    def resume_loop(self):
+        if self.block and self.state.video.loop_start is not None and self.state.video.loop_end is not None:
+            self.block.user_seek(self.state.video.loop_start)
+            self.update_markers()
 
     def switch(self, direction):
         if not self.state.video:
@@ -405,9 +495,13 @@ class VideoCell(QFrame):
             self.block.set_loop_start_time(position)
         else:
             self.block.set_loop_end_time(position)
+        self.block.loop_suspended = False
         self.update_markers()
 
     def clear_markers(self):
+        self.state.loop_suspended = False
+        if self.block:
+            self.block.loop_suspended = False
         if self.state.video:
             self.state.video.loop_start = self.state.video.loop_end = None
         self.update_markers()
@@ -460,7 +554,11 @@ class WorkspaceWindow(QMainWindow):
         self.context.is_disable_click_pause = False
         self.context.is_disable_wheel_seek = True
         self.driver = VideoDriverManager(context=self.context, parent=self)
-        self.store = PresetStore((data_directory or get_app_data_dir()) / "presets")
+        data_root = data_directory or get_app_data_dir()
+        data_root.mkdir(parents=True, exist_ok=True)
+        self.preferences = QSettings(str(data_root / "workspace.ini"), QSettings.IniFormat)
+        self.store = PresetStore(data_root / "presets")
+        self.last_hovered_cell = None
         self.cells = []
         self.folder_pool = QThreadPool(self)
         self.folder_pool.setMaxThreadCount(2)
@@ -504,6 +602,18 @@ class WorkspaceWindow(QMainWindow):
         presets.addWidget(button("另存新名稱", self.save_as))
         presets.addWidget(button("更新選定項目", self.update_selected))
         presets.addStretch()
+        presets.addWidget(QLabel("← / → 跳轉"))
+        self.seek_step = QDoubleSpinBox()
+        self.seek_step.setDecimals(3)
+        self.seek_step.setRange(0.001, 86400)
+        self.seek_step.setSuffix(" 秒")
+        try:
+            step = float(self.preferences.value("seek_seconds", 5))
+        except (ValueError, TypeError):
+            step = 5
+        self.seek_step.setValue(step)
+        self.seek_step.valueChanged.connect(self.save_seek_step)
+        presets.addWidget(self.seek_step)
         self.count_label = QLabel()
         presets.addWidget(self.count_label)
         root.addLayout(presets)
@@ -549,6 +659,39 @@ class WorkspaceWindow(QMainWindow):
         self._hover_timer = QTimer(self)
         self._hover_timer.timeout.connect(self.update_overlays)
         self._hover_timer.start(60)
+        QApplication.instance().installEventFilter(self)
+
+    def save_seek_step(self, value):
+        self.preferences.setValue("seek_seconds", value)
+        self.preferences.sync()
+
+    def eventFilter(self, watched, event):
+        if self._closing or not isinstance(watched, QWidget):
+            return False
+        belongs = watched is self or self.isAncestorOf(watched)
+        if not belongs or QApplication.activeModalWidget():
+            return False
+        if event.type() in (QEvent.MouseMove, QEvent.Enter):
+            self.update_overlays()
+        if event.type() not in (QEvent.KeyPress, QEvent.ShortcutOverride):
+            return False
+        if event.key() not in (Qt.Key_Left, Qt.Key_Right) or event.modifiers() != Qt.NoModifier:
+            return False
+        focus = QApplication.focusWidget()
+        while focus is not None and focus is not self:
+            if isinstance(focus, (QLineEdit, QAbstractSpinBox, QTextEdit, QPlainTextEdit, QComboBox)):
+                return False
+            focus = focus.parentWidget()
+        event.accept()
+        if event.type() == QEvent.KeyPress:
+            self.seek_active_cell(-1 if event.key() == Qt.Key_Left else 1)
+        return True
+
+    def seek_active_cell(self, direction):
+        cell = self.last_hovered_cell if self.last_hovered_cell in self.cells else (self.cells[0] if self.cells else None)
+        if cell and cell.block and cell.block.is_video_initialized:
+            cell.block.user_seek(cell.block.time + round(direction * self.seek_step.value() * 1000))
+            cell.update_markers()
 
     def update_overlays(self):
         for cell in self.cells:
@@ -755,6 +898,7 @@ class WorkspaceWindow(QMainWindow):
             event.ignore()
             return
         self._closing = True
+        QApplication.instance().removeEventFilter(self)
         self._refresh_timer.stop()
         self._hover_timer.stop()
         for cell in self.cells:

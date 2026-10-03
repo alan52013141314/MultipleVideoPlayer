@@ -65,7 +65,7 @@ def main():
         before = first.block.time
         cursor(first.seekbar)
         first.seekbar.setSliderDown(True)
-        first.seekbar.setValue(6000)
+        first.seekbar.setValue(7200)
         cursor(w.columns)
         assert first.bottom_panel.isVisible(), "keep an active drag usable"
         first.seekbar.setSliderDown(False)

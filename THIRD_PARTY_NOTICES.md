@@ -1,6 +1,6 @@
 # Third-party credits and licenses
 
-Updated: 2026-10-01. MultipleVideoPlayer is a modified GridPlayer workspace. It is not an official GridPlayer release; no upstream endorsement is implied.
+Updated: 2026-10-04. MultipleVideoPlayer is a modified GridPlayer workspace. It is not an official GridPlayer release; no upstream endorsement is implied.
 
 ## GridPlayer and local modifications
 
@@ -11,6 +11,8 @@ Updated: 2026-10-01. MultipleVideoPlayer is a modified GridPlayer workspace. It 
 - Modifications on 2026-09-30: six-to-twelve-cell workspace, spans, presets, per-cell display/audio settings, folder playlists, hover overlays, click-to-seek, volume popup, portable startup, version title and packaging. Publication documentation/repository setup: 2026-10-01. These are local changes, not upstream changes; see the local PR documents and Git history.
 
 ## Retained code and artwork
+
+Additional modifications on 2026-10-04 (0.5.5-local3): configurable arrow-key seeking, millisecond timeline preview, continuous scrubbing, suspended/resumable A/B loops, bounded middle-button video panning and portable package instructions. See PR-007.
 
 | Component | Credit / source | Terms and retained notice |
 |---|---|---|

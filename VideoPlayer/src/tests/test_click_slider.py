@@ -8,7 +8,7 @@ from PyQt5.QtWidgets import QApplication
 from gridplayer.widgets.click_slider import ClickSlider
 
 
-@pytest.fixture(scope='module')
+@pytest.fixture(scope='session')
 def app():
     return QApplication.instance() or QApplication([])
 
@@ -25,6 +25,33 @@ def test_groove_click_jumps_and_commits_once(app, fraction):
     QTest.mouseClick(slider,Qt.LeftButton,pos=QPoint(round(slider.width()*fraction),12))
     assert abs(slider.value()-fraction*10000)<250
     assert commits==[slider.value()]
+    assert not slider.isSliderDown()
+    slider.close()
+
+
+def test_handle_can_be_dragged_until_release_with_time_preview(app):
+    from PyQt5.QtCore import QEvent, QPointF
+    from PyQt5.QtGui import QMouseEvent
+    from PyQt5.QtWidgets import QStyle, QStyleOptionSlider, QToolTip
+    slider=ClickSlider(Qt.Horizontal)
+    slider.setRange(0,12000)
+    slider.setValue(3000)
+    slider.value_text=lambda value: f'{value} ms'
+    slider.resize(400,24)
+    slider.show()
+    app.processEvents()
+    option=QStyleOptionSlider()
+    slider.initStyleOption(option)
+    handle=slider.style().subControlRect(QStyle.CC_Slider,option,QStyle.SC_SliderHandle,slider)
+    QTest.mousePress(slider,Qt.LeftButton,pos=handle.center())
+    app.sendEvent(slider, QMouseEvent(QEvent.MouseMove,QPointF(280,12),Qt.NoButton,Qt.LeftButton,Qt.NoModifier))
+    QTest.qWait(30)
+    assert slider.isSliderDown() and slider.value()>7000
+    assert QToolTip.text()==f'{slider.value()} ms'
+    app.sendEvent(slider, QMouseEvent(QEvent.MouseMove,QPointF(160,12),Qt.NoButton,Qt.LeftButton,Qt.NoModifier))
+    QTest.qWait(30)
+    assert slider.isSliderDown() and 4000<slider.value()<5500
+    QTest.mouseRelease(slider,Qt.LeftButton,pos=QPoint(160,12))
     assert not slider.isSliderDown()
     slider.close()
 

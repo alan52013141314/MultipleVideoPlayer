@@ -202,6 +202,8 @@ class VlcPlayerBase(ABC):
         self.error(translate("Video Error", "Player error"))
 
     def cb_parse_changed(self, event):
+        if self._playlist_player is None:
+            return
         self._log.debug("Media parse changed")
 
         if event.u.new_status == vlc.MediaParsedStatus.skipped:
@@ -350,6 +352,7 @@ class VlcPlayerBase(ABC):
         else:
             self.loopback_load_video_st2_set_media()
 
+    @only_initialized_player
     def load_video_st2_set_media(self):
         """Step 2. Start video player with parsed file"""
 
@@ -371,6 +374,7 @@ class VlcPlayerBase(ABC):
 
         self._playlist_player.play_item_at_index(0)
 
+    @only_initialized_player
     def load_video_st3_extract_media_track(self):
         """Step 3. Extract media track"""
 
@@ -402,6 +406,7 @@ class VlcPlayerBase(ABC):
 
         self.loopback_load_video_st4_loaded()
 
+    @only_initialized_player
     def load_video_st4_loaded(self):
         """Step 4. Setting initial video params"""
 

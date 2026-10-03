@@ -22,6 +22,10 @@ def main():
     w = WorkspaceWindow(restore=False)
     w._hover_timer.stop()
     c = w.cells[0]
+    from gridplayer.models.video import Video
+    c.state.video = Video(uri='layout-test.mp4', loop_start=2000, loop_end=4000)
+    c.state.loop_suspended = True
+    c.update_markers()
     result = {}
     for width in (260, 415):
         c.resize(width, 240)

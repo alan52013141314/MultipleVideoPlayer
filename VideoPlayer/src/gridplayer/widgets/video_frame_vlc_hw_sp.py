@@ -250,6 +250,13 @@ class VideoFrameVLCHWSP(VideoFrameVLC):
             return
 
         ratio = self.devicePixelRatioF()
+        if self._workspace_pan:
+            rect = self.workspace_video_rect()
+            size = (round(rect.width() * ratio), round(rect.height() * ratio))
+            mode = VideoAspect.STRETCH if self._aspect == VideoAspect.STRETCH else VideoAspect.NONE
+            self.video_driver.adjust_view(size, mode, 1, self._crop)
+            self.video_surface.setGeometry(rect)
+            return
         size = (round(self.width() * ratio), round(self.height() * ratio))
         self.video_driver.adjust_view(size, self._aspect, self._scale, self._crop)
 

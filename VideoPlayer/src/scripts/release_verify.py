@@ -37,6 +37,9 @@ def main():
     window = modules.extract("gridplayer.workspace_window")
     assert "gridplayer.workspace_version" in window.co_names
     assert "update_volume_button" in set(code_names(window))
+    for name in ("user_seek", "resume_loop", "seek_active_cell", "begin_seek"):
+        assert name in set(code_names(window)), name
+    assert "video_rect" in set(code_names(modules.extract("gridplayer.utils.pan_geometry")))
     assert "mousePressEvent" in set(code_names(modules.extract("gridplayer.widgets.click_slider")))
     checked = 0
     with zipfile.ZipFile(archive_path) as package:
@@ -60,9 +63,10 @@ def main():
         "compiled_volume_popup_and_click_slider": True,
         "compiled_title_version": VERSION,
         "zip_sha256": archive_hash,
-        "desktop_visual_check": "Not performed: computer-use authorization remains unavailable.",
+        "compiled_pr007_interactions": True,
+        "desktop_visual_check": "See separate interaction and portable-start evidence; this script checks package contents only.",
     }
-    (PLAYER.parent / "verification/release-pr005-verification.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
+    (PLAYER.parent / "verification/release-pr007-verification.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
     print(json.dumps(result, indent=2))
 
 

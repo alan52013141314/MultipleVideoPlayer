@@ -2,7 +2,7 @@ import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-from PyQt5.QtCore import QSize, Qt, pyqtSignal
+from PyQt5.QtCore import QSize, QRect, Qt, pyqtSignal
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtWidgets import QLabel, QStackedLayout, QWidget
 
@@ -11,6 +11,7 @@ from gridplayer.utils.qt import QABC, QT_ASPECT_MAP, qt_connect
 from gridplayer.vlc_player.static import Media, MediaInput
 from gridplayer.vlc_player.video_driver_base import VLCVideoDriver
 from gridplayer.widgets.video_status import VideoStatus
+from gridplayer.utils.pan_geometry import video_rect
 
 DEFAULT_FPS = 25.0
 
@@ -72,6 +73,8 @@ class VideoFrameVLC(QWidget, metaclass=QABC):
         self._aspect = VideoAspect.FIT
         self._scale = 1
         self._crop = VideoCrop(0, 0, 0, 0)
+        self._workspace_pan = False
+        self._pan = (0, 0)
 
         self._is_status_change_in_progress = False
         self._is_cleanup_requested = False
@@ -282,6 +285,31 @@ class VideoFrameVLC(QWidget, metaclass=QABC):
     def set_time(self, seek_ms) -> None:
         self.video_driver.set_time(seek_ms)
 
+    def enable_workspace_pan(self):
+        self._workspace_pan = True
+        if self.is_opengl:
+            # Keep a full native surface and let the cell clip it, rather than
+            # asking VLC to discard the offscreen pixels before panning.
+            self.layout().removeWidget(self.video_surface)
+            self.pause_snapshot.hide()
+            self.audio_only_placeholder.hide()
+            # QStackedLayout hides the current widget when it is removed.
+            self.video_surface.show()
+            self.video_surface.raise_()
+
+    def workspace_video_rect(self):
+        track = self.media.cur_video_track if self.media else None
+        if track is None:
+            return self.rect()
+        rect, self._pan = video_rect(track.video_dimensions, (self.width(), self.height()),
+                                    self._aspect, self._pan, self.devicePixelRatioF(), self._scale)
+        return QRect(*rect)
+
+    def pan_by(self, dx, dy):
+        if self._workspace_pan and self.is_video_initialized:
+            self._pan = (self._pan[0] + dx, self._pan[1] + dy)
+            self.adjust_view()
+
     def set_playback_rate(self, rate) -> None:
         self.video_driver.set_playback_rate(rate)
 
@@ -301,6 +329,7 @@ class VideoFrameVLC(QWidget, metaclass=QABC):
 
     def set_aspect_ratio(self, aspect: VideoAspect) -> None:
         self._aspect = aspect
+        self._pan = (0, 0)
 
         self.adjust_view()
 
