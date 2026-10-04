@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 
 from PyQt5.QtCore import QSize, QRect, Qt, pyqtSignal
-from PyQt5.QtGui import QPixmap
+from PyQt5.QtGui import QPixmap, QPainter
 from PyQt5.QtWidgets import QLabel, QStackedLayout, QWidget
 
 from gridplayer.params.static import VideoAspect, VideoCrop
@@ -14,6 +14,21 @@ from gridplayer.widgets.video_status import VideoStatus
 from gridplayer.utils.pan_geometry import video_rect
 
 DEFAULT_FPS = 25.0
+
+
+class ExactFrame(QWidget):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.image = None
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.setAttribute(Qt.WA_NativeWindow)
+        self.hide()
+
+    def paintEvent(self, event):
+        painter=QPainter(self)
+        painter.fillRect(self.rect(),Qt.black)
+        if self.image is not None:
+            painter.drawImage(self.parent().workspace_video_rect(),self.image)
 
 
 class PauseSnapshot(QLabel):
@@ -54,6 +69,7 @@ class PauseSnapshot(QLabel):
 
 
 class VideoFrameVLC(QWidget, metaclass=QABC):
+    view_changed = pyqtSignal()
     time_changed = pyqtSignal(int)
     playback_status_changed = pyqtSignal(bool)
 
@@ -75,6 +91,7 @@ class VideoFrameVLC(QWidget, metaclass=QABC):
         self._crop = VideoCrop(0, 0, 0, 0)
         self._workspace_pan = False
         self._pan = (0, 0)
+        self._view_center = (0.5, 0.5)
 
         self._is_status_change_in_progress = False
         self._is_cleanup_requested = False
@@ -97,6 +114,7 @@ class VideoFrameVLC(QWidget, metaclass=QABC):
         self.video_driver: VLCVideoDriver = self.driver_setup(vlc_options=vlc_options)
 
         self.driver_connect()
+        self.exact_frame = ExactFrame(self)
 
     @property
     def length(self) -> int:
@@ -194,6 +212,9 @@ class VideoFrameVLC(QWidget, metaclass=QABC):
         self.video_driver.cleanup()
 
     def adjust_view(self) -> bool | None:
+        if hasattr(self,'exact_frame'):
+            self.exact_frame.setGeometry(self.rect())
+            self.exact_frame.update()
         if self._is_cleanup_requested:
             return True
 
@@ -301,14 +322,45 @@ class VideoFrameVLC(QWidget, metaclass=QABC):
         track = self.media.cur_video_track if self.media else None
         if track is None:
             return self.rect()
+        base, _ = video_rect(track.video_dimensions, (self.width(), self.height()),
+                            self._aspect, (0, 0), self.devicePixelRatioF(), self._scale)
+        self._pan = ((0.5-self._view_center[0])*base[2], (0.5-self._view_center[1])*base[3])
         rect, self._pan = video_rect(track.video_dimensions, (self.width(), self.height()),
                                     self._aspect, self._pan, self.devicePixelRatioF(), self._scale)
         return QRect(*rect)
 
     def pan_by(self, dx, dy):
         if self._workspace_pan and self.is_video_initialized:
-            self._pan = (self._pan[0] + dx, self._pan[1] + dy)
+            rect = self.workspace_video_rect()
+            self.set_view_center((0.5-(self._pan[0]+dx)/rect.width(),
+                                  0.5-(self._pan[1]+dy)/rect.height()))
+
+    def set_view_center(self, center):
+        self._view_center = tuple(max(0, min(1, v)) for v in center)
+        rect = self.workspace_video_rect()
+        self._view_center = (0.5-self._pan[0]/max(1, rect.width()),
+                             0.5-self._pan[1]/max(1, rect.height()))
+        self.adjust_view()
+        self.view_changed.emit()
+
+    def zoom_at(self, position, factor):
+        if self._workspace_pan and self.is_video_initialized:
+            old = self.workspace_video_rect()
+            x = max(old.x(), min(old.x()+old.width(), position.x()))
+            y = max(old.y(), min(old.y()+old.height(), position.y()))
+            u, v = (x-old.x())/old.width(), (y-old.y())/old.height()
+            self._scale = max(1, min(8, self._scale*factor))
+            new = self.workspace_video_rect()
+            self.set_view_center((u+(self.width()/2-x)/new.width(),
+                                  v+(self.height()/2-y)/new.height()))
+
+    def reset_view(self):
+        self._scale = 1
+        self._pan = (0, 0)
+        self._view_center = (0.5, 0.5)
+        if self.is_video_initialized:
             self.adjust_view()
+        self.view_changed.emit()
 
     def set_playback_rate(self, rate) -> None:
         self.video_driver.set_playback_rate(rate)
@@ -330,8 +382,23 @@ class VideoFrameVLC(QWidget, metaclass=QABC):
     def set_aspect_ratio(self, aspect: VideoAspect) -> None:
         self._aspect = aspect
         self._pan = (0, 0)
+        self._view_center = (0.5, 0.5)
 
         self.adjust_view()
+
+    def show_exact_frame(self, image):
+        self.exact_frame.image=image
+        self.exact_frame.setGeometry(self.rect())
+        self.video_surface.hide()
+        self.exact_frame.show()
+        self.exact_frame.raise_()
+        self.exact_frame.update()
+
+    def clear_exact_frame(self):
+        self.exact_frame.hide()
+        self.exact_frame.image=None
+        if self.is_video_initialized and not self.media.is_audio_only:
+            self.video_surface.show()
 
     def set_scale(self, scale) -> None:
         self._scale = scale

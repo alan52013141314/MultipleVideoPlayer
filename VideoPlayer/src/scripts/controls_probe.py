@@ -33,6 +33,10 @@ def main():
         panel.resize(width-2, panel.sizeHint().height())
         panel.show()
         app.processEvents()
+        c.compact_info()
+        assert c.time_label.geometry().top()==c.markers.geometry().top()
+        assert not c.time_label.geometry().intersects(c.markers.geometry())
+        assert c.back_to_loop.geometry().right()<panel.width()
         c.seekbar.setEnabled(True)
         c.seekbar.setValue(1000)
         released = []

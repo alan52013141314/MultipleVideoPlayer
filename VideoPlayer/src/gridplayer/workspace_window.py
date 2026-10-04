@@ -2,12 +2,13 @@
 from pathlib import Path
 
 from PyQt5.QtCore import Qt, QTimer, QPoint, QRect, QEvent, QSettings, pyqtSignal, QObject, QRunnable, QThreadPool
-from PyQt5.QtGui import QKeySequence, QCursor, QRegion
+from PyQt5.QtGui import QKeySequence, QCursor, QRegion, QImage, QTransform
 from PyQt5.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFrame, QGridLayout, QHBoxLayout,
     QInputDialog, QLabel, QMainWindow, QMessageBox, QPushButton, QScrollArea,
     QShortcut, QSizePolicy, QSpinBox, QVBoxLayout, QWidget, QFileDialog,
     QToolButton, QMenu, QWidgetAction, QDoubleSpinBox, QAbstractSpinBox, QLineEdit, QTextEdit, QPlainTextEdit,
+    QDialog, QDialogButtonBox, QFormLayout,
 )
 
 from gridplayer.models.video import Video
@@ -17,6 +18,7 @@ from gridplayer.player.managers.video_driver import VideoDriverManager
 from gridplayer.utils.app_dir import get_app_data_dir
 from gridplayer.widgets.video_block import VideoBlock
 from gridplayer.widgets.click_slider import ClickSlider
+from gridplayer.widgets.marker_slider import MarkerSlider
 from gridplayer.workspace_version import VERSION
 from gridplayer.workspace_state import CellState, WorkspaceState, PresetStore, placement, adjacent_video, scan_folder, folder_videos
 
@@ -33,6 +35,16 @@ def button(text, callback, tooltip=None):
     widget.setToolTip(tooltip or text)
     widget.clicked.connect(callback)
     return widget
+
+
+class ElidingLabel(QLabel):
+    def setText(self, text):
+        self.full_text=text
+        super().setText(self.fontMetrics().elidedText(text,Qt.ElideRight,max(1,self.width())))
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.setText(getattr(self,'full_text',''))
 
 
 class WorkspaceBlock(VideoBlock):
@@ -66,6 +78,7 @@ class WorkspaceBlock(VideoBlock):
     def user_seek(self, target):
         if not self.is_video_initialized:
             return
+        self.leave_frame_preview()
         target = max(0, min(round(target), max(0, self.video_driver.length - 1)))
         v = self.video_params
         if v.loop_start is not None and v.loop_end is not None:
@@ -73,10 +86,28 @@ class WorkspaceBlock(VideoBlock):
         self.video_driver.set_time(target)
         self.time = target
 
+    def leave_frame_preview(self):
+        self.frame_request = None
+        if getattr(self,'frame_preview_active',False):
+            self.frame_preview_active=False
+            self.video_driver.clear_exact_frame()
+
+    def play_pause(self):
+        self.leave_frame_preview()
+        super().play_pause()
+
     def time_changed(self, new_time):
         # Decoder callbacks from an earlier seek must not snap a held slider back.
-        if not self.scrubbing:
+        if not self.scrubbing and not getattr(self, 'frame_preview_active', False):
             super().time_changed(new_time)
+
+    def wheelEvent(self, event):
+        if self.is_video_initialized and event.angleDelta().y():
+            self.video_driver.zoom_at(self.video_driver.mapFromGlobal(event.globalPos()),
+                                      1.1 ** max(-20,min(20,event.angleDelta().y()/120)))
+            event.accept()
+        else:
+            event.ignore()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MiddleButton:
@@ -172,6 +203,27 @@ class FolderScan(QRunnable):
         self.signals.finished.emit(self.cell, self.request, paths, error)
 
 
+class FrameSignals(QObject):
+    finished = pyqtSignal(object, object, object, str)
+
+
+class FrameJob(QRunnable):
+    def __init__(self, cell, request, path, seconds, direction, block):
+        super().__init__()
+        self.cell,self.request,self.path,self.seconds,self.direction,self.block=cell,request,path,seconds,direction,block
+        self.signals=FrameSignals()
+
+    def run(self):
+        try:
+            from gridplayer.utils.frame_step import adjacent_frame
+            result=adjacent_frame(self.path,self.seconds,self.direction,
+                                  lambda: self.block.frame_request is not self.request)
+            error=''
+        except Exception as exc:
+            result,error=None,str(exc)
+        self.signals.finished.emit(self.cell,self.request,result,error)
+
+
 class VideoCell(QFrame):
     def __init__(self, owner, state):
         super().__init__()
@@ -195,6 +247,19 @@ class VideoCell(QFrame):
         self.title.setMinimumWidth(0)
         self.title.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         heading.addWidget(self.title, 1)
+        self.focus_button = button('⛶', lambda: owner.focus_cell(self), '只看此格／返回網格')
+        self.focus_button.setFixedWidth(25)
+        heading.addWidget(self.focus_button)
+        self.tools_button = QToolButton()
+        self.tools_button.setText('⋯')
+        self.tools_button.setToolTip('逐格、AB 時間')
+        self.tools_button.setPopupMode(QToolButton.InstantPopup)
+        self.tools_menu = QMenu(self.tools_button)
+        self.tools_button.setMenu(self.tools_menu)
+        self.step_back = self.tools_menu.addAction('上一格（暫停）', lambda: self.step_frame(-1))
+        self.step_next = self.tools_menu.addAction('下一格（暫停）', lambda: self.step_frame(1))
+        self.edit_ab = self.tools_menu.addAction('輸入 A／B 時間…', self.edit_markers)
+        heading.addWidget(self.tools_button)
         self.span = QComboBox()
         self.span.addItems(["1×1", "橫跨 2 欄", "縱跨 2 列", "2×2"])
         self.span.setCurrentIndex({(1,1):0, (1,2):1, (2,1):2, (2,2):3}[state.rows, state.cols])
@@ -209,7 +274,8 @@ class VideoCell(QFrame):
         layout = QVBoxLayout(self.bottom_panel)
         layout.setContentsMargins(5, 4, 5, 4)
         layout.setSpacing(3)
-        self.seekbar = ClickSlider(Qt.Horizontal)
+        self.seekbar = MarkerSlider(Qt.Horizontal)
+        self.seekbar.marker_moved.connect(self.move_marker)
         self.seekbar.setToolTip("點擊跳至該位置，或拖曳滑桿定位")
         self.seekbar.setRange(0, 10000)
         self.seekbar.setEnabled(False)
@@ -260,7 +326,7 @@ class VideoCell(QFrame):
         self.volume_value.setFixedWidth(65)
         self.volume_value.setToolTip("直接輸入此格音量百分比")
         self.volume_value.valueChanged.connect(self.volume.setValue)
-        self.time_label = QLabel("00:00:00 / 00:00:00")
+        self.time_label = ElidingLabel("00:00:00 / 00:00:00")
         audio.addWidget(self.volume, 1)
         audio.addWidget(self.volume_value)
         audio.addWidget(self.mute)
@@ -280,15 +346,27 @@ class VideoCell(QFrame):
         ):
             self.display_mode.addItem(label, mode)
         self.display_mode.setToolTip("此格獨立設定；換片沿用，並隨 preset 保存")
+        self.display_mode.setMinimumWidth(0)
+        self.display_mode.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
         self.display_mode.currentIndexChanged.connect(self.set_display_mode)
         view.addWidget(self.display_mode, 1)
+        self.zoom_label = QLabel('1.00×')
+        view.addWidget(self.zoom_label)
+        self.reset_button = button('↺', self.reset_view, '重置視圖：1 倍並置中')
+        self.reset_button.setFixedWidth(25)
+        view.addWidget(self.reset_button)
         layout.addLayout(view)
-        self.markers = QLabel("A —   B —")
-        self.markers.setWordWrap(True)
-        layout.addWidget(self.time_label)
+        self.markers = ElidingLabel("A —   B —")
+        self.markers.setMinimumWidth(0)
+        self.markers.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        self.time_label.setMinimumWidth(0)
+        self.time_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         loop_row = QHBoxLayout()
+        loop_row.addWidget(self.time_label, 1)
         loop_row.addWidget(self.markers, 1)
         self.back_to_loop = button("回到循環", self.resume_loop, "Back to looping：回到 A 並恢復區間循環")
+        self.back_to_loop.setText('↻')
+        self.back_to_loop.setFixedWidth(25)
         loop_row.addWidget(self.back_to_loop)
         layout.addLayout(loop_row)
         self.refresh()
@@ -297,8 +375,8 @@ class VideoCell(QFrame):
 
     def update_overlay(self):
         popup = (self.span.view().isVisible() or self.display_mode.view().isVisible()
-                 or self.volume_menu.isVisible())
-        dragging = self.seekbar.isSliderDown() or self.volume.isSliderDown()
+                 or self.volume_menu.isVisible() or self.tools_menu.isVisible())
+        dragging = self.seekbar.isSliderDown() or self.volume.isSliderDown() or self.seekbar.marker_drag is not None
         active = self.owner.isActiveWindow() or QApplication.activeWindow() in (self.top_panel, self.bottom_panel)
         cell_rect = QRect(self.mapToGlobal(QPoint()), self.size())
         viewport = self.owner.viewport
@@ -309,6 +387,7 @@ class VideoCell(QFrame):
         visible = (self.isVisible() and not self.owner.isMinimized() and
                    (active or popup) and not QApplication.activeModalWidget() and
                    (hovered or popup or dragging))
+        self.compact_info()
         for panel, at_bottom in ((self.top_panel, False), (self.bottom_panel, True)):
             if not visible or clip.isEmpty():
                 panel.hide()
@@ -344,6 +423,9 @@ class VideoCell(QFrame):
                 self.title.setText(f"{index:02}  {name}  ·  {paths.index(Path(str(video.uri)))+1}/{len(paths)}")
         self.title.setToolTip(str(video.uri) if video else "拖入本機影片")
         ready = self.block is not None and self.block.is_video_initialized and not self.block._is_error
+        for action in (self.step_back, self.step_next):
+            action.setEnabled(bool(ready and video.is_paused and not getattr(self,'frame_busy',False)))
+        self.edit_ab.setEnabled(ready)
         for control in (self.play, self.head, self.tail, self.seekbar):
             control.setEnabled(ready)
         if ready:
@@ -379,6 +461,109 @@ class VideoCell(QFrame):
         self.state.loop_suspended = suspended
         self.back_to_loop.setEnabled(bool(enabled and self.block and self.block.is_video_initialized))
         self.markers.setText(f"A {clock(v.loop_start if v else None)}   B {clock(v.loop_end if v else None)}" + ("   暫離循環" if enabled and suspended else "   ↻" if enabled else ""))
+        self.seekbar.set_markers(v.loop_start if v else None,v.loop_end if v else None,suspended)
+        self.compact_info()
+
+    def compact_info(self):
+        v=self.state.video
+        a,b=(v.loop_start,v.loop_end) if v else (None,None)
+        exact=lambda t: '—' if t is None else f'{clock(t)}.{t%1000:03}'
+        duration=self.block.video_driver.length if self.block and self.block.is_video_initialized else 0
+        time=f'{clock(v.current_position if v else 0)} / {clock(duration)}'
+        length=f'  Δ {exact(b-a)}' if a is not None and b is not None else ''
+        markers=f'A {exact(a)}  B {exact(b)}{length}'
+        if a is not None and b is not None:
+            markers += ' 暫離' if self.state.loop_suspended else ' ↻'
+        self.time_label.setToolTip(f'{exact(v.current_position if v else 0)} / {exact(duration)}')
+        self.markers.setToolTip(markers+'；⋯ 可直接輸入 AB 時間')
+        short=lambda t: '—' if t is None else (f'{t/1000:g}' if t<60000 else clock(t).lstrip('0').lstrip(':'))
+        if self.width()<500:
+            time=f'{clock(v.current_position if v else 0)[3:] if (v.current_position if v else 0)<3600000 else clock(v.current_position)} / {clock(duration)[3:] if duration<3600000 else clock(duration)}'
+            markers=f'A{short(a)} B{short(b)}'+(f' Δ{short(b-a)}s' if a is not None and b is not None else '')
+        self.time_label.setText(time)
+        self.markers.setText(markers)
+        self.back_to_loop.setText('↩' if self.state.loop_suspended else '↻')
+
+    def sync_view(self):
+        if self.block and self.block.is_video_initialized:
+            frame=self.block.video_driver
+            self.state.video.scale=frame._scale
+            self.state.view_center=frame._view_center
+            self.zoom_label.setText(f'{frame._scale:.2f}×')
+
+    def restore_view(self):
+        if self.block:
+            self.block.video_driver.set_view_center(self.state.view_center)
+            self.sync_view()
+            # A resized native VLC surface can remain black when start-paused.
+            # Decode the saved frame without advancing it, after restoring geometry.
+            if self.state.video.is_paused:
+                self.step_frame(0)
+
+    def reset_view(self):
+        if self.block:
+            self.block.video_driver.reset_view()
+
+    def step_frame(self, direction):
+        if not self.block or not self.block.is_video_initialized or not self.state.video.is_paused or getattr(self,'frame_busy',False):
+            return
+        if self.block.video_driver.media.is_audio_only:
+            self.owner.notify('此來源沒有影片影格')
+            return
+        self.frame_busy=True
+        request=object()
+        self.block.frame_request=request
+        self.block.frame_preview_active=True
+        seconds=getattr(self.block,'frame_seconds',self.block.time/1000) if self.block.video_driver.exact_frame.isVisible() else self.block.time/1000
+        job=FrameJob(self,request,str(self.state.video.uri),seconds,direction,self.block)
+        job.signals.finished.connect(self.owner.frame_finished)
+        self.owner.frame_jobs[request]=job
+        self.owner.folder_pool.start(job)
+        self.refresh()
+        self.owner.notify('正在解碼相鄰影格…')
+
+    def move_marker(self, name, value):
+        if not self.block or not self.block.is_video_initialized:
+            return
+        v=self.state.video
+        if name=='A':
+            v.loop_start=max(0,min(value,v.loop_end-1 if v.loop_end is not None else self.block.video_driver.length-1))
+        else:
+            v.loop_end=min(self.block.video_driver.length,max(value,(v.loop_start or 0)+1))
+        self.block.loop_suspended=not (v.loop_start is not None and v.loop_end is not None and v.loop_start<=self.block.time<=v.loop_end)
+        self.update_markers()
+
+    def edit_markers(self):
+        if not self.block or not self.block.is_video_initialized:
+            return
+        dialog=QDialog(self.owner)
+        dialog.setWindowTitle('A／B 時間（秒，可輸入小數）')
+        form=QFormLayout(dialog)
+        fields=[]
+        for title,value in (('A',self.state.video.loop_start),('B',self.state.video.loop_end)):
+            field=QDoubleSpinBox()
+            field.setDecimals(3)
+            field.setRange(0,self.block.video_driver.length/1000)
+            field.setValue((value if value is not None else (0 if title=='A' else self.block.video_driver.length))/1000)
+            form.addRow(title,field)
+            fields.append(field)
+        length=QLabel()
+        def changed():
+            delta=fields[1].value()-fields[0].value()
+            length.setText(f'區間長度：{delta:.3f} 秒' if delta>0 else 'A 必須小於 B')
+            buttons.button(QDialogButtonBox.Ok).setEnabled(delta>0)
+        form.addRow(length)
+        buttons=QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        form.addRow(buttons)
+        for field in fields:
+            field.valueChanged.connect(changed)
+        changed()
+        if dialog.exec_()==QDialog.Accepted:
+            self.state.video.loop_start,self.state.video.loop_end=[round(f.value()*1000) for f in fields]
+            self.block.loop_suspended=not self.state.video.loop_start<=self.block.time<=self.state.video.loop_end
+            self.update_markers()
 
     def set_span(self, index):
         self.state.rows, self.state.cols = [(1,1), (1,2), (2,1), (2,2)][index]
@@ -393,6 +578,7 @@ class VideoCell(QFrame):
         same_source = self.state.video is not None and str(self.state.video.uri) == str(video.uri)
         if not same_source:
             self.state.loop_suspended = False
+            self.state.view_center = (0.5, 0.5)
         self.dispose()
         self.state.video = video.model_copy(deep=True)
         v = self.state.video
@@ -413,6 +599,8 @@ class VideoCell(QFrame):
         self.block.time_change.connect(self.update_time)
         self.block.is_paused_change.connect(self.update_play)
         self.block.ready.connect(self.refresh)
+        self.block.ready.connect(self.restore_view)
+        self.block.video_driver.view_changed.connect(self.sync_view)
         self.block.notice.connect(self.owner.notify)
         self.block.video_driver.error.connect(lambda message: self.owner.notify(f"影片讀取失敗：{path.name} — {message}"))
         self.block.set_video(v)
@@ -420,12 +608,14 @@ class VideoCell(QFrame):
         self.refresh()
 
     def dispose(self):
+        self.frame_busy=False
         self.seek_timer.stop()
         self.volume_menu.hide()
         self.top_panel.hide()
         self.bottom_panel.hide()
         if self.block is not None:
             block, self.block = self.block, None
+            block.frame_request=None
             # Disconnect state updates before any replacement can receive late events.
             block.time_change.disconnect(self.update_time)
             block.is_paused_change.disconnect(self.update_play)
@@ -439,9 +629,11 @@ class VideoCell(QFrame):
             self.seekbar.setMaximum(max(1, duration - 1))
             self.seekbar.setValue(time)
         self.time_label.setText(f"{clock(time)} / {clock(duration)}")
+        self.compact_info()
 
     def update_play(self, paused):
         self.play.setText("▶" if paused else "Ⅱ")
+        self.refresh()
 
     def play_pause(self):
         if self.block and self.block.is_video_initialized:
@@ -533,6 +725,7 @@ class VideoCell(QFrame):
             self.state.video.aspect_mode = mode
         if self.block and self.block.is_video_initialized:
             self.block.set_aspect(mode)
+            self.reset_view()
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls() and all(u.isLocalFile() for u in event.mimeData().urls()):
@@ -559,6 +752,8 @@ class WorkspaceWindow(QMainWindow):
         self.preferences = QSettings(str(data_root / "workspace.ini"), QSettings.IniFormat)
         self.store = PresetStore(data_root / "presets")
         self.last_hovered_cell = None
+        self.focused_cell = None
+        self.frame_jobs = {}
         self.cells = []
         self.folder_pool = QThreadPool(self)
         self.folder_pool.setMaxThreadCount(2)
@@ -638,7 +833,7 @@ class WorkspaceWindow(QMainWindow):
             QScrollArea { border:0; }
         """)
         QShortcut(QKeySequence("F11"), self, activated=lambda: self.fullscreen.toggle())
-        QShortcut(QKeySequence("Escape"), self, activated=lambda: self.fullscreen.setChecked(False))
+        QShortcut(QKeySequence("Escape"), self, activated=self.escape_view)
         QShortcut(QKeySequence("Ctrl+S"), self, activated=self.save_as)
         self.refresh_presets()
         if restore and self.store._path("last").exists():
@@ -714,6 +909,8 @@ class WorkspaceWindow(QMainWindow):
     def remove_cell(self, cell):
         if len(self.cells) <= 1:
             return
+        if self.focused_cell is cell:
+            self.focused_cell = None
         cell.dispose()
         self.grid.removeWidget(cell)
         self.cells.remove(cell)
@@ -729,7 +926,17 @@ class WorkspaceWindow(QMainWindow):
             self.grid.setRowStretch(row, 0)
         for col in range(self.grid.columnCount()):
             self.grid.setColumnStretch(col, 0)
+        if self.focused_cell in self.cells:
+            for cell in self.cells:
+                cell.setVisible(cell is self.focused_cell)
+                cell.focus_button.setText('↩' if cell is self.focused_cell else '⛶')
+            self.grid.addWidget(self.focused_cell,0,0)
+            self.grid.setRowStretch(0,1)
+            self.grid.setColumnStretch(0,1)
+            return
         for cell, area in zip(self.cells, placement([c.state for c in self.cells], int(self.columns.currentText()))):
+            cell.show()
+            cell.focus_button.setText('⛶')
             self.grid.addWidget(cell, *area)
             for row in range(area[0], area[0]+area[2]):
                 self.grid.setRowStretch(row, 1)
@@ -738,6 +945,17 @@ class WorkspaceWindow(QMainWindow):
             cell.refresh()
         self.add.setEnabled(len(self.cells) < 12)
         self.count_label.setText(f"{len(self.cells)} / 12 格  ·  拖入影片即可播放")
+
+    def focus_cell(self, cell):
+        self.focused_cell = None if self.focused_cell is cell else cell
+        self.relayout()
+
+    def escape_view(self):
+        if self.focused_cell:
+            self.focused_cell = None
+            self.relayout()
+        else:
+            self.fullscreen.setChecked(False)
 
     def drop_files(self, start, paths):
         paths = [Path(p).resolve() for p in paths]
@@ -782,6 +1000,34 @@ class WorkspaceWindow(QMainWindow):
             self.load_source(cell, paths[0], paths, job.directory)
             self.notify(f"已載入資料夾清單，共 {len(paths)} 部影片；前後切換可首尾循環。")
 
+    def frame_finished(self, cell, request, result, error):
+        job=self.frame_jobs.pop(request,None)
+        if self._closing or cell not in self.cells or cell.block is not (job.block if job else None):
+            return
+        cell.frame_busy=False
+        cell.refresh()
+        if cell.block.frame_request is not request:
+            return
+        if error or result is None:
+            cell.block.frame_preview_active=cell.block.video_driver.exact_frame.isVisible()
+            self.notify('無法逐格解碼：'+error)
+            return
+        seconds,width,height,stride,data,rotation=result
+        image=QImage(data,width,height,stride,QImage.Format_RGB888).copy()
+        if rotation:
+            image=image.transformed(QTransform().rotate(-rotation))
+        block=cell.block
+        block.frame_seconds=seconds
+        target=max(0,round(seconds*1000))
+        block.video_driver.set_time(target)
+        block.time=target
+        v=cell.state.video
+        if v.loop_start is not None and v.loop_end is not None:
+            block.loop_suspended=not v.loop_start<=target<=v.loop_end
+        block.video_driver.show_exact_frame(image)
+        cell.update_markers()
+        self.notify(f'影格時間 {clock(target)}.{target%1000:03}；保持暫停')
+
     def apply_global_mute(self, muted):
         for cell in self.cells:
             if cell.block:
@@ -815,6 +1061,7 @@ class WorkspaceWindow(QMainWindow):
     def restore(self, state):
         # Validate fully before removing any live media.
         state = WorkspaceState.model_validate(state.model_dump())
+        self.focused_cell = None
         for cell in self.cells:
             cell.dispose()
             self.grid.removeWidget(cell)

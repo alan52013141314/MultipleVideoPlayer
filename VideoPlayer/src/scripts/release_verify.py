@@ -37,9 +37,16 @@ def main():
     window = modules.extract("gridplayer.workspace_window")
     assert "gridplayer.workspace_version" in window.co_names
     assert "update_volume_button" in set(code_names(window))
-    for name in ("user_seek", "resume_loop", "seek_active_cell", "begin_seek"):
+    for name in ("user_seek", "resume_loop", "seek_active_cell", "begin_seek", "step_frame", "frame_finished", "edit_markers", "focus_cell"):
         assert name in set(code_names(window)), name
     assert "video_rect" in set(code_names(modules.extract("gridplayer.utils.pan_geometry")))
+    assert "adjacent_frame" in set(code_names(modules.extract("gridplayer.utils.frame_step")))
+    source_frame=compile((PLAYER/'src/gridplayer/utils/frame_step.py').read_text(encoding='utf8'),'<source>','exec')
+    compiled_frame=modules.extract('gridplayer.utils.frame_step')
+    source_func=next(c for c in source_frame.co_consts if isinstance(c,types.CodeType) and c.co_name=='adjacent_frame')
+    compiled_func=next(c for c in compiled_frame.co_consts if isinstance(c,types.CodeType) and c.co_name=='adjacent_frame')
+    assert source_func.co_code==compiled_func.co_code and source_func.co_names==compiled_func.co_names, 'Stale frame decoder in exe'
+    assert "marker_x" in set(code_names(modules.extract("gridplayer.widgets.marker_slider")))
     assert "mousePressEvent" in set(code_names(modules.extract("gridplayer.widgets.click_slider")))
     checked = 0
     with zipfile.ZipFile(archive_path) as package:
@@ -66,7 +73,7 @@ def main():
         "compiled_pr007_interactions": True,
         "desktop_visual_check": "See separate interaction and portable-start evidence; this script checks package contents only.",
     }
-    (PLAYER.parent / "verification/release-pr007-verification.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
+    (PLAYER.parent / "verification/release-pr008-verification.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
     print(json.dumps(result, indent=2))
 
 

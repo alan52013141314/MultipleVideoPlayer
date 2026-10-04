@@ -1,8 +1,14 @@
 # MultipleVideoPlayer
 
-Windows 多格影片播放器，改造自 [vzhd1701 與貢獻者的 GridPlayer](https://github.com/vzhd1701/gridplayer)。目前版本：**0.5.5-local3**。這是獨立修改版，並非 GridPlayer 官方發行。
+Windows 多格影片播放器，改造自 [vzhd1701 與貢獻者的 GridPlayer](https://github.com/vzhd1701/gridplayer)。目前版本：**0.5.5-local4**。這是獨立修改版，並非 GridPlayer 官方發行。
 
 ## 功能
+
+本次更新：[PR-008：精簡控制列、AB 編輯、縮放及精準逐格](VideoPlayer/docs/PR-008-COMPACT-MARKERS-ZOOM.md)。
+
+- 精簡單行時間資訊、可拖動的 AB 標記及直接輸入區間。
+- 游標定點滾輪縮放、倍率顯示與重置；縮放及平移隨 preset 保存。
+- 暫停時真正解碼相鄰影格，可前進／後退；支援單格放大查看及返回網格。
 
 - 預設六格，最多十二格；支援橫跨、縱跨與 2×2 格子。
 - 各格獨立播放、暫停、音量與靜音；播放按鈕旁的小型音量按鈕可展開調節。
@@ -31,12 +37,12 @@ Windows 多格影片播放器，改造自 [vzhd1701 與貢獻者的 GridPlayer](
 在 `VideoPlayer` 執行：
 
 ```powershell
-.\.venv\Scripts\python -m pytest src/tests/test_workspace.py src/tests/test_display_modes.py src/tests/test_click_slider.py src/tests/test_workspace_interaction.py -q
+.\.venv\Scripts\python -m pytest src/tests/test_workspace.py src/tests/test_display_modes.py src/tests/test_click_slider.py src/tests/test_workspace_interaction.py src/tests/test_frame_step.py -q
 ```
 
-上述資料及元件測試共 27 項。VLC 整合腳本位於 `VideoPlayer/src/scripts`，需要本機 libVLC 和自行準備的測試影片；它們引用的 `verification` 產物不包含在 Git 中。`interaction_verify.py` 可驗證本次操作，加入 `--software` 驗證軟體解碼；已建置後可執行 `launcher_verify.py`、`release_verify.py` 檢查入口及套件。
+上述資料及元件測試共 28 項。VLC 整合腳本位於 `VideoPlayer/src/scripts`，需要本機 libVLC 和自行準備的測試影片；它們引用的 `verification` 產物不包含在 Git 中。`interaction_verify.py` 可驗證本次操作，加入 `--software` 驗證軟體解碼；已建置後可執行 `launcher_verify.py`、`release_verify.py` 檢查入口及套件。
 
-AB 循環回到開頭的短暫停頓尚未修正。此次已在 Windows 11 驗證打包版原生影片畫面與主要控制，尚未用独立 Windows 10 電腦驗證；十二格也不保證任意十二條 4K 影片均流暢。詳細驗證範圍見播放器 `docs` 中各份需求文件。
+AB 循環回到開頭的短暫停頓尚未修正。此次已在 Windows 11 驗證打包版原生影片畫面與主要控制，尚未用獨立 Windows 10 電腦驗證；十二格也不保證任意十二條 4K 影片均流暢。詳細驗證範圍見播放器 `docs` 中各份需求文件。
 
 ## Credit 與授權
 

@@ -1,4 +1,4 @@
-GridPlayer Workspace 0.5.5-local3
+GridPlayer Workspace 0.5.5-local4
 Upstream: https://github.com/vzhd1701/gridplayer
 Tag: v0.5.5
 Commit: da2a649fcbcb8f1ab945353f090befca53f8725f
@@ -17,4 +17,3 @@ win64 portable package (libVLC 3.0.21). VLC source and licensing information:
 https://www.videolan.org/vlc/download-sources.html
 https://www.videolan.org/legal.html
 The modified source is retained in the accompanying local project.
-

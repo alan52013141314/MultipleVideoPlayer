@@ -21,6 +21,7 @@ class CellState(BaseModel):
     playlist: list[str] = Field(default_factory=list)
     source_folder: str | None = None
     loop_suspended: bool = False
+    view_center: tuple[float, float] = (0.5, 0.5)
 
 
 class WorkspaceState(BaseModel):

@@ -28,6 +28,17 @@ Artwork is retained from the stated upstream baseline. The program's GPL license
 
 ## Dependencies
 
+Version 0.5.5-local4 adds exact paused frame decoding with PyAV 16.0.1 and its
+shared FFmpeg libraries. Credit: [PyAV contributors](https://github.com/PyAV-Org/PyAV/tree/v16.0.1)
+and [FFmpeg contributors](https://ffmpeg.org/). PyAV's BSD-3-Clause text and authors
+are retained in `licenses/PyAV-LICENSE.txt` and `licenses/PyAV-AUTHORS.rst`.
+The installed wheel reports LGPL-3.0-or-later for its FFmpeg libraries; see
+`licenses/LGPL-3.0.txt` and the exact component versions/build configuration in
+`licenses/PyAV-FFmpeg-build.json`. Source/build references: PyAV v16.0.1 and
+[PyAV FFmpeg build scripts](https://github.com/PyAV-Org/pyav-ffmpeg).
+The libraries remain shared files in the portable package. This local package
+is not uploaded as a public binary release.
+
 Installed runtimes and downloaded applications are excluded from Git. Versions are recorded in [requirements-lock.txt](VideoPlayer/requirements-lock.txt), [pyproject.toml](VideoPlayer/src/pyproject.toml) and `uv.lock`.
 
 | Dependency | Credit / source | License information |

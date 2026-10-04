@@ -28,10 +28,10 @@ def main():
     from gridplayer.utils.libvlc import init_vlc
     env.VLC_VERSION, env.VLC_PYTHON_VERSION = init_vlc()
     from gridplayer.workspace_window import WorkspaceWindow
-    from PyQt5.QtCore import Qt, QEvent, QPoint, QPointF, QSettings
-    from PyQt5.QtGui import QCursor, QMouseEvent
+    from PyQt5.QtCore import Qt, QEvent, QPoint, QPointF, QSettings, QTimer
+    from PyQt5.QtGui import QCursor, QMouseEvent, QWheelEvent
     from PyQt5.QtTest import QTest
-    from PyQt5.QtWidgets import QStyle, QStyleOptionSlider, QToolTip
+    from PyQt5.QtWidgets import QStyle, QStyleOptionSlider, QToolTip, QDoubleSpinBox, QDialogButtonBox
 
     def wait(condition):
         deadline = time.monotonic() + 15
@@ -141,16 +141,98 @@ def main():
         assert state.cells[0].loop_suspended
         w.restore(state)
         wait(lambda: w.cells[0].block and w.cells[0].block.is_video_initialized)
+        wait(lambda: not getattr(w.cells[0],'frame_busy',False))
         assert w.cells[0].block.loop_suspended
         assert w.cells[0].state.video.current_position>=6500
         assert w.cells[0].block.video_driver._pan==(0,0)
+        first=w.cells[0]
+        frame=first.block.video_driver
+        first.clear_markers()
+        first.block.user_seek(3000)
+        first.display_mode.setCurrentIndex(first.display_mode.findData(A.HEIGHT))
+        point=QPoint(frame.width()//3,frame.height()//3)
+        before=frame.workspace_video_rect()
+        u=(point.x()-before.x())/before.width()
+        v=(point.y()-before.y())/before.height()
+        wheel=QWheelEvent(QPointF(point),QPointF(first.block.mapToGlobal(point)),QPoint(),QPoint(0,120),
+                          Qt.NoButton,Qt.NoModifier,Qt.NoScrollPhase,False)
+        app.sendEvent(first.block,wheel)
+        after=frame.workspace_video_rect()
+        assert abs(after.x()+u*after.width()-point.x())<=1.5
+        assert abs(after.y()+v*after.height()-point.y())<=1.5
+        assert abs(first.state.video.scale-1.1)<.001
+        assert w.cells[1].state.video.scale==1
+        frame.pan_by(50,20)
+        center=first.state.view_center
+        zoom=first.state.video.scale
+        players=[c.block for c in w.cells]
+        w.focus_cell(first)
+        QTest.qWait(100)
+        assert first.isVisible() and not w.cells[1].isVisible()
+        w.escape_view()
+        QTest.qWait(100)
+        assert w.cells[1].isVisible() and players==[c.block for c in w.cells]
+        snapshot=w.snapshot()
+        w.restore(snapshot)
+        wait(lambda:w.cells[0].block.is_video_initialized)
+        wait(lambda:not getattr(w.cells[0],'frame_busy',False))
+        first=w.cells[0]
+        frame=first.block.video_driver
+        assert abs(frame._scale-zoom)<.001
+        assert all(abs(a-b)<.01 for a,b in zip(frame._view_center,center))
+        first.reset_view()
+        assert first.state.video.scale==1 and first.state.view_center==(.5,.5)
+        first.state.video.loop_start=2000
+        first.state.video.loop_end=4000
+        first.update_markers()
+        slider=first.seekbar
+        original_time=first.block.time
+        QTest.mousePress(slider,Qt.LeftButton,pos=QPoint(slider.marker_x(2000),2))
+        move(slider,QPoint(slider.marker_x(3000),2),Qt.LeftButton)
+        QTest.mouseRelease(slider,Qt.LeftButton,pos=QPoint(slider.marker_x(3000),2))
+        assert 2800<first.state.video.loop_start<3200
+        assert first.block.time==original_time
+        dialog_checks=[]
+        def fill_ab():
+            dialog=app.activeModalWidget()
+            fields=dialog.findChildren(QDoubleSpinBox)
+            buttons=dialog.findChild(QDialogButtonBox)
+            fields[0].setValue(5)
+            fields[1].setValue(4)
+            dialog_checks.append(not buttons.button(QDialogButtonBox.Ok).isEnabled())
+            fields[0].setValue(1.125)
+            fields[1].setValue(4.375)
+            dialog_checks.append(buttons.button(QDialogButtonBox.Ok).isEnabled())
+            buttons.button(QDialogButtonBox.Ok).click()
+        QTimer.singleShot(100,fill_ab)
+        first.edit_markers()
+        assert dialog_checks==[True,True]
+        assert (first.state.video.loop_start,first.state.video.loop_end)==(1125,4375)
+        first.clear_markers()
+        first.block.user_seek(3000)
+        first.step_frame(1)
+        wait(lambda:not first.frame_busy)
+        assert frame.exact_frame.isVisible() and first.state.video.is_paused
+        forward=first.block.frame_seconds
+        first.step_frame(-1)
+        wait(lambda:not first.frame_busy)
+        assert first.block.frame_seconds<forward
+        first.step_frame(1)
+        wait(lambda:not first.frame_busy)
+        assert abs(first.block.frame_seconds-forward)<.00001
+        first.block.play_pause()
+        wait(lambda:not first.state.video.is_paused)
+        assert not frame.exact_frame.isVisible()
         result.update(passed=True, version=w.windowTitle(), checks=[
             'first-cell keyboard fallback; last hovered target after pointer leaves',
             'fractional step saved; numeric input arrow editing does not seek',
             'held handle previews real VLC seeks; tooltip includes milliseconds',
             'outside AB suspends; back button returns to A paused; inside AB resumes',
             'middle drag pans enlarged image; clamps at image edge; mode resets',
-            'preset restores suspended loop and out-of-loop position'])
+            'preset restores suspended loop and out-of-loop position',
+            'PR008 cursor anchored wheel zoom; independent cells; saved view center and scale',
+            'PR008 focus/return preserves players; marker drag preserves playback position',
+            'PR008 exact decoded frame next/back/next round trip and playback resume'])
     finally:
         w.close()
         QTest.qWait(300)

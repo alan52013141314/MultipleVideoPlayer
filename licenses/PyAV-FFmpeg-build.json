@@ -1,0 +1,65 @@
+{
+  "libavutil": {
+    "version": [
+      60,
+      8,
+      100
+    ],
+    "configuration": "--disable-static --enable-shared --libdir=/c/cibw/vendor/lib --prefix=/c/cibw/vendor --disable-programs --disable-doc --disable-libxml2 --disable-lzma --disable-libtheora --disable-libfreetype --disable-libfontconfig --disable-libbluray --disable-libopenjpeg --enable-mediafoundation --enable-version3 --enable-gmp --disable-alsa --disable-gnutls --enable-libaom --enable-libdav1d --enable-libmp3lame --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopus --enable-libspeex --enable-libsvtav1 --enable-libtwolame --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libopenh264 --disable-libxcb --enable-zlib --enable-libx264 --enable-libx265 --enable-nvenc --enable-nvdec --disable-encoder='avui,dca,mlp,opus,s302m,sonic,sonic_ls,truehd,vorbis' --disable-decoder=sonic --disable-libjack --disable-indev=jack",
+    "license": "LGPL version 3 or later"
+  },
+  "libavcodec": {
+    "version": [
+      62,
+      11,
+      100
+    ],
+    "configuration": "--disable-static --enable-shared --libdir=/c/cibw/vendor/lib --prefix=/c/cibw/vendor --disable-programs --disable-doc --disable-libxml2 --disable-lzma --disable-libtheora --disable-libfreetype --disable-libfontconfig --disable-libbluray --disable-libopenjpeg --enable-mediafoundation --enable-version3 --enable-gmp --disable-alsa --disable-gnutls --enable-libaom --enable-libdav1d --enable-libmp3lame --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopus --enable-libspeex --enable-libsvtav1 --enable-libtwolame --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libopenh264 --disable-libxcb --enable-zlib --enable-libx264 --enable-libx265 --enable-nvenc --enable-nvdec --disable-encoder='avui,dca,mlp,opus,s302m,sonic,sonic_ls,truehd,vorbis' --disable-decoder=sonic --disable-libjack --disable-indev=jack",
+    "license": "LGPL version 3 or later"
+  },
+  "libavformat": {
+    "version": [
+      62,
+      3,
+      100
+    ],
+    "configuration": "--disable-static --enable-shared --libdir=/c/cibw/vendor/lib --prefix=/c/cibw/vendor --disable-programs --disable-doc --disable-libxml2 --disable-lzma --disable-libtheora --disable-libfreetype --disable-libfontconfig --disable-libbluray --disable-libopenjpeg --enable-mediafoundation --enable-version3 --enable-gmp --disable-alsa --disable-gnutls --enable-libaom --enable-libdav1d --enable-libmp3lame --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopus --enable-libspeex --enable-libsvtav1 --enable-libtwolame --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libopenh264 --disable-libxcb --enable-zlib --enable-libx264 --enable-libx265 --enable-nvenc --enable-nvdec --disable-encoder='avui,dca,mlp,opus,s302m,sonic,sonic_ls,truehd,vorbis' --disable-decoder=sonic --disable-libjack --disable-indev=jack",
+    "license": "LGPL version 3 or later"
+  },
+  "libavdevice": {
+    "version": [
+      62,
+      1,
+      100
+    ],
+    "configuration": "--disable-static --enable-shared --libdir=/c/cibw/vendor/lib --prefix=/c/cibw/vendor --disable-programs --disable-doc --disable-libxml2 --disable-lzma --disable-libtheora --disable-libfreetype --disable-libfontconfig --disable-libbluray --disable-libopenjpeg --enable-mediafoundation --enable-version3 --enable-gmp --disable-alsa --disable-gnutls --enable-libaom --enable-libdav1d --enable-libmp3lame --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopus --enable-libspeex --enable-libsvtav1 --enable-libtwolame --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libopenh264 --disable-libxcb --enable-zlib --enable-libx264 --enable-libx265 --enable-nvenc --enable-nvdec --disable-encoder='avui,dca,mlp,opus,s302m,sonic,sonic_ls,truehd,vorbis' --disable-decoder=sonic --disable-libjack --disable-indev=jack",
+    "license": "LGPL version 3 or later"
+  },
+  "libavfilter": {
+    "version": [
+      11,
+      4,
+      100
+    ],
+    "configuration": "--disable-static --enable-shared --libdir=/c/cibw/vendor/lib --prefix=/c/cibw/vendor --disable-programs --disable-doc --disable-libxml2 --disable-lzma --disable-libtheora --disable-libfreetype --disable-libfontconfig --disable-libbluray --disable-libopenjpeg --enable-mediafoundation --enable-version3 --enable-gmp --disable-alsa --disable-gnutls --enable-libaom --enable-libdav1d --enable-libmp3lame --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopus --enable-libspeex --enable-libsvtav1 --enable-libtwolame --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libopenh264 --disable-libxcb --enable-zlib --enable-libx264 --enable-libx265 --enable-nvenc --enable-nvdec --disable-encoder='avui,dca,mlp,opus,s302m,sonic,sonic_ls,truehd,vorbis' --disable-decoder=sonic --disable-libjack --disable-indev=jack",
+    "license": "LGPL version 3 or later"
+  },
+  "libswscale": {
+    "version": [
+      9,
+      1,
+      100
+    ],
+    "configuration": "--disable-static --enable-shared --libdir=/c/cibw/vendor/lib --prefix=/c/cibw/vendor --disable-programs --disable-doc --disable-libxml2 --disable-lzma --disable-libtheora --disable-libfreetype --disable-libfontconfig --disable-libbluray --disable-libopenjpeg --enable-mediafoundation --enable-version3 --enable-gmp --disable-alsa --disable-gnutls --enable-libaom --enable-libdav1d --enable-libmp3lame --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopus --enable-libspeex --enable-libsvtav1 --enable-libtwolame --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libopenh264 --disable-libxcb --enable-zlib --enable-libx264 --enable-libx265 --enable-nvenc --enable-nvdec --disable-encoder='avui,dca,mlp,opus,s302m,sonic,sonic_ls,truehd,vorbis' --disable-decoder=sonic --disable-libjack --disable-indev=jack",
+    "license": "LGPL version 3 or later"
+  },
+  "libswresample": {
+    "version": [
+      6,
+      1,
+      100
+    ],
+    "configuration": "--disable-static --enable-shared --libdir=/c/cibw/vendor/lib --prefix=/c/cibw/vendor --disable-programs --disable-doc --disable-libxml2 --disable-lzma --disable-libtheora --disable-libfreetype --disable-libfontconfig --disable-libbluray --disable-libopenjpeg --enable-mediafoundation --enable-version3 --enable-gmp --disable-alsa --disable-gnutls --enable-libaom --enable-libdav1d --enable-libmp3lame --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopus --enable-libspeex --enable-libsvtav1 --enable-libtwolame --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libopenh264 --disable-libxcb --enable-zlib --enable-libx264 --enable-libx265 --enable-nvenc --enable-nvdec --disable-encoder='avui,dca,mlp,opus,s302m,sonic,sonic_ls,truehd,vorbis' --disable-decoder=sonic --disable-libjack --disable-indev=jack",
+    "license": "LGPL version 3 or later"
+  }
+}

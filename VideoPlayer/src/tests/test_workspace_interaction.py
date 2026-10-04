@@ -23,6 +23,7 @@ def test_manual_seek_crosses_markers_without_removing_them(target, expected, sus
     calls = []
     video = Video(uri='clip.mp4', loop_start=2000, loop_end=4000, is_paused=True)
     block = SimpleNamespace(is_video_initialized=True, video_params=video, loop_suspended=True,
+                            leave_frame_preview=lambda: None,
                             video_driver=SimpleNamespace(length=10000, set_time=calls.append))
     WorkspaceBlock.user_seek(block, target)
     assert calls == [expected]
