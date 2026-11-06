@@ -1,3 +1,5 @@
+目前使用 **0.6.0 Rust**：請參考 [Rust 播放器說明](../RustPlayer/README.md) 與 [PR-009](docs/PR-009-RUST-REWRITE.md)。本目錄的 Start-Player.cmd 已切換 Rust 入口；以下保留 Python 舊版歷史說明。
+
 # 多格影片播放器
 
 在專案中執行 `Start-Player.cmd`；它會選用已安裝的最新版。此版視窗標題顯示 `0.5.5-local4`。若舊播放器仍開啟，請先正常關閉，再啟動。

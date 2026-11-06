@@ -1,5 +1,8 @@
 # Local installations and downloads
 /downloads/
+/RustPlayer/target/
+/RustPlayer/runtime/
+/RustPlayer/dist/
 /VideoPlayer/.venv/
 /VideoPlayer/build/
 /VideoPlayer/dist/

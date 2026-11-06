@@ -1,5 +1,27 @@
 # Third-party credits and licenses
 
+## Rust rewrite (0.6.0, 2026-11-06)
+
+The native Rust application in `RustPlayer` reimplements the existing workspace
+and preserves its JSON preset format. GridPlayer's authors and original GPL
+notices remain credited; the historical Python source is retained in the
+repository but is not executed or packaged by the Rust application.
+
+- Rust GUI: [egui / eframe, Emil Ernerfeldt and contributors](https://github.com/emilk/egui), MIT OR Apache-2.0. Exact Rust dependencies are pinned in `RustPlayer/Cargo.lock`; the portable package includes each available license file and a dependency manifest under `licenses`.
+- Native playback: [mpv contributors](https://mpv.io/), using FFmpeg and other native libraries. Windows binaries are from [shinchiro's build project](https://github.com/shinchiro/mpv-winbuild-cmake/releases/tag/20261106), as listed by mpv's installation page.
+- Vulkan loader: The Khronos Group, LunarG and Valve; official LunarG runtime 1.4.363.0, MIT/Apache-2.0. The x64 loader is shipped beside libmpv to satisfy its DLL dependency without a system installation; its complete `VulkanRT-License.txt` is retained.
+- Frame indexing: [FFmpeg contributors](https://ffmpeg.org/). This pinned Windows build enables GPL and version 3; the full build configuration is included in the package.
+- Native versions, archive checksums and source/build links: `RustPlayer/native-components.json`. This program remains GPL-3.0-or-later. DLLs remain separate replaceable files.
+- Chinese text uses the Windows-installed Microsoft JhengHei/YaHei font when available. These system fonts are read locally and are **not redistributed** in the package.
+
+The build script produces a local portable package, not a public binary release.
+Before any public redistribution of native binaries, provide the complete
+corresponding sources/build materials and notices required by their respective
+licenses; credit alone is not a substitute for those obligations.
+
+The following sections document dependencies retained in the historical Python
+version; Python, Qt, PyAV and VLC are not bundled in the Rust release.
+
 Updated: 2026-10-04. MultipleVideoPlayer is a modified GridPlayer workspace. It is not an official GridPlayer release; no upstream endorsement is implied.
 
 ## GridPlayer and local modifications

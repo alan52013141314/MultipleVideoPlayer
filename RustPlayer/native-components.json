@@ -1,0 +1,9 @@
+{
+  "build_provider": "https://github.com/shinchiro/mpv-winbuild-cmake",
+  "release": "https://github.com/shinchiro/mpv-winbuild-cmake/releases/tag/20261106",
+  "architecture": "x86_64 (baseline, not x86_64-v3)",
+  "vulkan_loader": {"version":"1.4.363.0","source":"https://github.com/KhronosGroup/Vulkan-Loader","download":"https://sdk.lunarg.com/sdk/download/1.4.363.0/windows/vulkan-runtime-components.zip","archive_sha256":"a25a927aa8b9f0371048f1861cf88ac3b9bc9b1fb332c42d897c8ab32695769a","license":"MIT and Apache-2.0; bundled VulkanRT-License.txt"},
+  "mpv": {"commit": "9028187538", "source": "https://github.com/mpv-player/mpv/tree/9028187538", "archive_sha256": "b5a3cc91b5dabf88ad5bb21d000834da4fd0bbda30f4584d39c082127bd62414"},
+  "ffmpeg": {"commit": "9f690c6a4", "source": "https://github.com/FFmpeg/FFmpeg/tree/9f690c6a4", "archive_sha256": "1f19e71f70ae47d8f48a16c38bca1c68a42d94a5fddbdcf1b7aae8e162b228b8", "configuration": "GPL and version3 enabled; full build configuration included in portable licenses/ffmpeg-build.txt"},
+  "distribution": "Local portable build. No public binary release is published by this build script. The original native-component provider maintains its binaries and build sources."
+}
