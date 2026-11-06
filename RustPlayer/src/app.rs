@@ -21,6 +21,7 @@ struct Runtime {
     error: String,
     loading: bool,
     popup_open: bool,
+    applied_picture: Option<[i32; 5]>,
     index: Vec<f64>,
     index_job: Option<crate::frame_index::Job>,
     pending_step: Option<isize>,
@@ -39,6 +40,9 @@ pub struct App {
     data: PathBuf,
     last_hover: usize,
     focus: Option<usize>,
+    fullscreen_restore: Option<(Option<usize>, bool)>,
+    pending_click: Option<(usize, String, f64)>,
+    picture_dialog: Option<Option<usize>>,
     seek_seconds: f64,
     presets: Vec<(String, String)>,
     selected: String,
@@ -124,6 +128,9 @@ impl App {
             data,
             last_hover: 0,
             focus: None,
+            fullscreen_restore: None,
+            pending_click: None,
+            picture_dialog: None,
             seek_seconds,
             presets: vec![],
             selected: "last".into(),
@@ -179,8 +186,32 @@ impl App {
             self.message = e;
         }
     }
+    fn set_paused(&mut self, i: usize, paused: bool) {
+        if let Some(v) = self.state.cells[i].video.as_mut() {
+            v.is_paused = paused;
+            self.runtime[i].pending_step = None;
+            if let Some(p) = self.runtime[i].player.clone() {
+                self.report(
+                    p.lock()
+                        .unwrap()
+                        .set("pause", if paused { "yes" } else { "no" }),
+                );
+            }
+        }
+    }
+    fn leave_focus(&mut self, ctx: &egui::Context) {
+        self.pending_click = None;
+        if let Some((focus, fullscreen)) = self.fullscreen_restore.take() {
+            self.focus = focus;
+            self.state.fullscreen = fullscreen;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(fullscreen));
+        } else {
+            self.focus = None;
+        }
+    }
     fn command(&mut self, i: usize, args: &[&str]) {
         if args.first() == Some(&"stop") || args == ["cycle", "pause"] {
+            self.pending_click = None;
             self.runtime[i].pending_step = None;
         }
         if let Some(p) = self.runtime[i].player.clone() {
@@ -201,7 +232,11 @@ impl App {
                 }
             }
         }
-        self.state.clone()
+        let mut state = self.state.clone();
+        if let Some((_, fullscreen)) = self.fullscreen_restore {
+            state.fullscreen = fullscreen;
+        }
+        state
     }
     fn save(&mut self, key: String, name: String) {
         let snapshot = self.snapshot();
@@ -220,6 +255,9 @@ impl App {
         match model::read_preset(&path) {
             Err(e) => self.message = e,
             Ok(p) => {
+                self.pending_click = None;
+                self.fullscreen_restore = None;
+                self.picture_dialog = None;
                 for i in 0..12 {
                     self.command(i, &["stop"]);
                     self.runtime[i].key.clear();
@@ -444,6 +482,7 @@ impl App {
                 self.runtime[i].index.clear();
                 self.runtime[i].pending_step = None;
                 self.runtime[i].key = v.id.clone();
+                self.runtime[i].applied_picture = None;
                 self.runtime[i].time = v.current_position as f64 / 1000.;
                 self.runtime[i].duration = 0.;
                 self.runtime[i].error.clear();
@@ -475,6 +514,20 @@ impl App {
             }
             let mut player = p.lock().unwrap();
             player.poll();
+            let picture =
+                model::effective_picture(self.state.picture, self.state.cells[i].picture_overrides);
+            if self.runtime[i].applied_picture != Some(picture) {
+                let mut success = true;
+                for (key, value) in model::PICTURE_KEYS.iter().zip(picture) {
+                    if let Err(e) = player.set_number(key, value as f64) {
+                        self.runtime[i].error = e;
+                        success = false;
+                    }
+                }
+                if success {
+                    self.runtime[i].applied_picture = Some(picture);
+                }
+            }
             if let Some(e) = &player.error {
                 self.runtime[i].error = e.clone();
             }
@@ -500,6 +553,28 @@ impl App {
                 ui.strong("MultipleVideoPlayer");
                 ui.label(format!("{} Rust", env!("CARGO_PKG_VERSION")));
                 ui.separator();
+                let has_video = self.state.cells.iter().any(|c| c.video.is_some());
+                let play = self
+                    .state
+                    .cells
+                    .iter()
+                    .filter_map(|c| c.video.as_ref())
+                    .any(|v| v.is_paused);
+                if ui
+                    .add_enabled(
+                        has_video,
+                        egui::Button::new(if play { "全部播放" } else { "全部暫停" }),
+                    )
+                    .clicked()
+                {
+                    self.pending_click = None;
+                    for i in 0..self.state.cells.len() {
+                        self.set_paused(i, !play);
+                    }
+                }
+                if ui.button("全域畫面").clicked() {
+                    self.picture_dialog = Some(None);
+                }
                 if ui.button("開啟影片").clicked() {
                     self.pick(self.last_hover, false)
                 }
@@ -546,7 +621,7 @@ impl App {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(self.state.fullscreen));
                 }
                 if self.focus.is_some() && ui.button("返回網格 Esc").clicked() {
-                    self.focus = None;
+                    self.leave_focus(ctx);
                 }
                 if self.state.borderless && ui.button("關閉").clicked() {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -646,6 +721,29 @@ impl App {
             pos2(rect.min.x + 4., rect.max.y - 108.),
             rect.max - vec2(4., 4.),
         );
+        let video_click = response
+            .interact_pointer_pos()
+            .is_some_and(|p| !control_rect.contains(p));
+        if video_click && self.state.cells[i].video.is_some() {
+            if response.double_clicked_by(egui::PointerButton::Primary) {
+                self.pending_click = None;
+                if self.fullscreen_restore.is_some() {
+                    self.leave_focus(ui.ctx());
+                } else {
+                    self.fullscreen_restore = Some((self.focus, self.state.fullscreen));
+                    self.focus = Some(i);
+                    self.state.fullscreen = true;
+                    ui.ctx()
+                        .send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
+                }
+            } else if response.clicked_by(egui::PointerButton::Primary) {
+                self.pending_click = Some((
+                    i,
+                    self.state.cells[i].video.as_ref().unwrap().id.clone(),
+                    ui.input(|s| s.time),
+                ));
+            }
+        }
         let c = &mut self.state.cells[i];
         if let Some(v) = &mut c.video {
             let source = self.runtime[i].source.max(vec2(1., 1.));
@@ -1015,6 +1113,10 @@ impl App {
         });
     }
     fn extra_controls(&mut self, ui: &mut egui::Ui, i: usize, has: bool, paused: bool) {
+        if ui.small_button("畫面").clicked() {
+            self.picture_dialog = Some(Some(i));
+            ui.memory_mut(|m| m.close_popup());
+        }
         if ui
             .add_enabled(has && paused, egui::Button::new("‹格"))
             .clicked()
@@ -1035,7 +1137,11 @@ impl App {
             })
             .clicked()
         {
-            self.focus = if self.focus == Some(i) { None } else { Some(i) };
+            if self.focus == Some(i) {
+                self.leave_focus(ui.ctx());
+            } else {
+                self.focus = Some(i);
+            }
         }
         if let Some(v) = &mut self.state.cells[i].video {
             let old = v.aspect_mode.clone();
@@ -1185,6 +1291,69 @@ impl App {
         }
     }
     fn dialogs(&mut self, ctx: &egui::Context) {
+        if let Some(target) = self.picture_dialog {
+            let mut open = true;
+            let title = target.map_or_else(
+                || "全域畫面設定".to_owned(),
+                |i| format!("第 {} 格畫面設定", i + 1),
+            );
+            egui::Window::new(title)
+                .id(egui::Id::new("picture_settings"))
+                .collapsible(false)
+                .resizable(false)
+                .open(&mut open)
+                .show(ctx, |ui| {
+                    ui.label("0 為原始畫面；調整只影響播放顯示。");
+                    for (k, label) in ["亮度", "對比", "飽和度", "Gamma", "色相"]
+                        .iter()
+                        .enumerate()
+                    {
+                        ui.horizontal(|ui| {
+                            ui.label(*label);
+                            if let Some(i) = target {
+                                let value = &mut self.state.cells[i].picture_overrides[k];
+                                let mut inherit = value.is_none();
+                                if ui.checkbox(&mut inherit, "沿用全域").changed() {
+                                    *value = if inherit {
+                                        None
+                                    } else {
+                                        Some(self.state.picture[k])
+                                    };
+                                }
+                                let mut shown = value.unwrap_or(self.state.picture[k]);
+                                if ui
+                                    .add_enabled(
+                                        !inherit,
+                                        egui::Slider::new(&mut shown, -100..=100),
+                                    )
+                                    .changed()
+                                {
+                                    *value = Some(shown);
+                                }
+                            } else {
+                                ui.add(egui::Slider::new(&mut self.state.picture[k], -100..=100));
+                            }
+                        });
+                    }
+                    ui.horizontal(|ui| {
+                        if ui.button("重置為原始畫面").clicked() {
+                            if let Some(i) = target {
+                                self.state.cells[i].picture_overrides = [Some(0); 5];
+                            } else {
+                                self.state.picture = [0; 5];
+                            }
+                        }
+                        if let Some(i) = target {
+                            if ui.button("全部恢復沿用").clicked() {
+                                self.state.cells[i].picture_overrides = [None; 5];
+                            }
+                        }
+                    });
+                });
+            if !open {
+                self.picture_dialog = None;
+            }
+        }
         if self.save_dialog {
             let mut open = true;
             egui::Window::new("另存 preset")
@@ -1313,19 +1482,27 @@ impl eframe::App for App {
                 self.seek(i, self.runtime[i].time + self.seek_seconds);
             }
             if ctx.input(|s| s.key_pressed(egui::Key::F11)) {
-                self.state.fullscreen = !self.state.fullscreen;
-                ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(self.state.fullscreen));
+                if self.fullscreen_restore.is_some() {
+                    self.leave_focus(ctx);
+                } else {
+                    self.state.fullscreen = !self.state.fullscreen;
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(self.state.fullscreen));
+                }
             }
             if ctx.input(|s| s.key_pressed(egui::Key::Escape)) {
-                if self.focus.is_some() {
-                    self.focus = None;
+                if self.picture_dialog.is_some() {
+                    self.picture_dialog = None;
+                } else if self.focus.is_some() {
+                    self.leave_focus(ctx);
                 } else {
                     self.state.fullscreen = false;
                     ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
                 }
             }
         }
-        self.toolbar(ctx);
+        if self.fullscreen_restore.is_none() {
+            self.toolbar(ctx);
+        }
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE.inner_margin(4.))
             .show(ctx, |ui| {
@@ -1363,6 +1540,8 @@ impl eframe::App for App {
                 }
             });
         if let Some(i) = self.remove_cell.take() {
+            self.leave_focus(ctx);
+            self.picture_dialog = None;
             self.command(i, &["stop"]);
             self.state.cells.remove(i);
             let mut r = self.runtime.remove(i);
@@ -1386,6 +1565,24 @@ impl eframe::App for App {
             self.open_paths(self.last_hover, files);
         }
         self.dialogs(ctx);
+        if let Some((i, id, time)) = &self.pending_click {
+            if ctx.input(|s| s.time) - time
+                > ctx.options(|o| o.input_options.max_double_click_delay)
+            {
+                let i = *i;
+                let paused = self
+                    .state
+                    .cells
+                    .get(i)
+                    .and_then(|c| c.video.as_ref())
+                    .filter(|v| &v.id == id)
+                    .map(|v| !v.is_paused);
+                self.pending_click = None;
+                if let Some(paused) = paused {
+                    self.set_paused(i, paused);
+                }
+            }
+        }
         if let Err(e) = &self.api {
             self.message = e.clone();
         }

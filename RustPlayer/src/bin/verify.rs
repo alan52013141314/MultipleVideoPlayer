@@ -23,6 +23,9 @@ struct Verify {
     api: Arc<player::Api>,
     clip: String,
     references: Vec<Vec<u8>>,
+    picture_step: usize,
+    baseline: Vec<u8>,
+    other_baseline: Vec<u8>,
 }
 impl eframe::App for Verify {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
@@ -73,6 +76,7 @@ impl eframe::App for Verify {
             }
         });
         if !self.done
+            && self.picture_step == 0
             && !self.pts.is_empty()
             && self.players[0].lock().unwrap().loaded
             && self.last.elapsed() > Duration::from_millis(220)
@@ -99,7 +103,11 @@ impl eframe::App for Verify {
             if self.index == self.pts.len() * 2 {
                 let second = self.players[1].lock().unwrap();
                 self.checks.push(serde_json::json!({"independent_volume":p.number("volume")==Some(23.)&&second.number("volume")==Some(78.),"paused":p.flag("pause")}));
-                self.done = true;
+                self.baseline = p.rendered_pixels();
+                self.other_baseline = second.rendered_pixels();
+                p.set_number("brightness", 35.).unwrap();
+                self.picture_step = 1;
+                self.last = Instant::now();
             } else {
                 p.command(&[
                     "seek",
@@ -108,6 +116,28 @@ impl eframe::App for Verify {
                 ])
                 .unwrap();
                 self.index += 1;
+                self.last = Instant::now();
+            }
+        }
+        if !self.done && self.picture_step > 0 && self.last.elapsed() > Duration::from_millis(300) {
+            let keys = ["brightness", "contrast", "saturation", "gamma", "hue"];
+            let key = keys[(self.picture_step - 1) / 2];
+            let p = self.players[0].lock().unwrap();
+            let second = self.players[1].lock().unwrap();
+            let delta = image_delta(&self.baseline, &p.rendered_pixels());
+            let other_delta = image_delta(&self.other_baseline, &second.rendered_pixels());
+            let adjusted = self.picture_step % 2 == 1;
+            let pass = if adjusted { delta > 0.5 } else { delta < 0.1 } && other_delta < 0.1;
+            self.checks.push(serde_json::json!({"picture":key,"adjusted":adjusted,"pixel_delta":delta,"other_cell_delta":other_delta,"pass":pass}));
+            if self.picture_step == 10 {
+                self.done = true;
+            } else {
+                if adjusted {
+                    p.set_number(key, 0.).unwrap();
+                } else {
+                    p.set_number(keys[self.picture_step / 2], 35.).unwrap();
+                }
+                self.picture_step += 1;
                 self.last = Instant::now();
             }
         }
@@ -187,6 +217,9 @@ fn main() -> eframe::Result<()> {
                 api,
                 clip,
                 references,
+                picture_step: 0,
+                baseline: vec![],
+                other_baseline: vec![],
             }))
         }),
     )
@@ -198,4 +231,14 @@ fn sequence(i: usize, n: usize) -> usize {
     } else {
         2 * n - i - 1
     }
+}
+fn image_delta(a: &[u8], b: &[u8]) -> f64 {
+    if a.is_empty() || a.len() != b.len() {
+        return f64::INFINITY;
+    }
+    a.iter()
+        .zip(b)
+        .map(|(a, b)| (*a as f64 - *b as f64).abs())
+        .sum::<f64>()
+        / a.len() as f64
 }

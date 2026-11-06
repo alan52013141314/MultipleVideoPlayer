@@ -1,13 +1,17 @@
 # MultipleVideoPlayer
 
-Windows 多格影片播放器，目前版本 **0.6.0 Rust**。主程式與介面已改用 Rust，播放與逐格解碼使用隨包附帶的原生 mpv／FFmpeg，不需要 Python、Qt 或另裝 VLC。
+Windows 多格影片播放器，目前版本 **0.6.1 Rust**。主程式與介面已改用 Rust，播放與逐格解碼使用隨包附帶的原生 mpv／FFmpeg，不需要 Python、Qt 或另裝 VLC。
 
 重寫需求、計劃與驗收：[PR-009](VideoPlayer/docs/PR-009-RUST-REWRITE.md)。歷史版本改造自 [GridPlayer（vzhd1701 與貢獻者）](https://github.com/vzhd1701/gridplayer)，原作者署名及 GPL 授權保留；本程式不是上游官方發行。
 
 ## 功能
 
+下一項更新的需求與工作計劃：[PR-010：播放與畫面調整](VideoPlayer/docs/PR-010-PLAYBACK-PICTURE-CONTROLS.md)（已實作）。
+
 - 預設六格，最多十二格；二至四欄、跨行跨欄與單格放大查看。
+- 單擊畫面切換播放／暫停；全域播放／暫停按鈕；雙擊該格全螢幕，再雙擊還原。
 - 各格獨立播放、音量與靜音；音量在播放按鈕旁展開調整。
+- 亮度、對比、飽和度、Gamma、色相：全域設定及各格逐項覆寫，隨 preset 保存。
 - Fit、Fill、符合寬度、符合高度、Stretch、原始像素 1:1。
 - 游標定點滾輪縮放、中鍵平移、倍率與重置；視圖隨 preset 保存。
 - 拖入影片或資料夾，遞迴自然排序；前後影片首尾循環。
@@ -25,7 +29,7 @@ Windows 多格影片播放器，目前版本 **0.6.0 Rust**。主程式與介面
 2. 執行 `RustPlayer/build.ps1 -Install`。
 3. 雙擊 `VideoPlayer/Start-Player.cmd`；視窗標題顯示版本。
 
-免安裝包產生在 `RustPlayer/dist/MultipleVideoPlayer-0.6.0-win64.zip`。完整解壓後直接執行 **MultipleVideoPlayer.exe**，保留旁邊的 `runtime` 與 `licenses`。
+免安裝包產生在 `RustPlayer/dist/MultipleVideoPlayer-0.6.1-win64.zip`。完整解壓後直接執行 **MultipleVideoPlayer.exe**，保留旁邊的 `runtime` 與 `licenses`。
 
 專案入口沿用 `VideoPlayer/dist/GridPlayerWorkspace/portable_data`，不搬移或覆寫既有 preset；獨立解壓包則使用 exe 旁的 `portable_data`。影片只保存路徑。詳見 [Rust 操作與建置說明](RustPlayer/README.md)。
 

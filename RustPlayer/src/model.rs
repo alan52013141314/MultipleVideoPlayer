@@ -22,6 +22,49 @@ fn center() -> [f32; 2] {
 fn span() -> usize {
     1
 }
+pub const PICTURE_KEYS: [&str; 5] = ["brightness", "contrast", "saturation", "gamma", "hue"];
+pub fn effective_picture(global: [i32; 5], overrides: [Option<i32>; 5]) -> [i32; 5] {
+    std::array::from_fn(|i| overrides[i].unwrap_or(global[i]))
+}
+
+#[cfg(test)]
+mod picture_tests {
+    use super::*;
+    #[test]
+    fn inherits_per_property_and_roundtrips() {
+        let mut state = Workspace::default();
+        state.picture = [20, -10, 30, 0, 5];
+        state.cells[0].picture_overrides = [None, Some(0), None, Some(15), None];
+        let encoded = serde_json::to_value(&state).unwrap();
+        let restored: Workspace = serde_json::from_value(encoded.clone()).unwrap();
+        assert_eq!(
+            effective_picture(restored.picture, restored.cells[0].picture_overrides),
+            [20, 0, 30, 15, 5]
+        );
+        state.picture[0] = 45;
+        assert_eq!(
+            effective_picture(state.picture, state.cells[0].picture_overrides)[0],
+            45
+        );
+        state.cells[0].picture_overrides = [None; 5];
+        assert_eq!(
+            effective_picture(state.picture, state.cells[0].picture_overrides),
+            state.picture
+        );
+        let mut legacy = encoded;
+        legacy.as_object_mut().unwrap().remove("picture");
+        for cell in legacy["cells"].as_array_mut().unwrap() {
+            cell.as_object_mut().unwrap().remove("picture_overrides");
+        }
+        let restored: Workspace = serde_json::from_value(legacy).unwrap();
+        assert_eq!(
+            effective_picture(restored.picture, restored.cells[0].picture_overrides),
+            [0; 5]
+        );
+        state.cells[0].picture_overrides[0] = Some(101);
+        assert!(state.validate().is_err());
+    }
+}
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Video {
     #[serde(default = "id")]
@@ -74,6 +117,8 @@ impl Video {
 }
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Cell {
+    #[serde(default)]
+    pub picture_overrides: [Option<i32>; 5],
     #[serde(default = "id")]
     pub id: String,
     #[serde(default = "span")]
@@ -94,6 +139,7 @@ pub struct Cell {
 impl Default for Cell {
     fn default() -> Self {
         Self {
+            picture_overrides: [None; 5],
             id: id(),
             rows: 1,
             cols: 1,
@@ -107,6 +153,8 @@ impl Default for Cell {
 }
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Workspace {
+    #[serde(default)]
+    pub picture: [i32; 5],
     pub version: u32,
     pub cells: Vec<Cell>,
     pub columns: usize,
@@ -118,6 +166,7 @@ pub struct Workspace {
 impl Default for Workspace {
     fn default() -> Self {
         Self {
+            picture: [0; 5],
             version: 1,
             cells: (0..6).map(|_| Cell::default()).collect(),
             columns: 3,
@@ -130,6 +179,15 @@ impl Default for Workspace {
 }
 impl Workspace {
     pub fn validate(&self) -> Result<(), String> {
+        if self.picture.iter().any(|v| !(-100..=100).contains(v))
+            || self
+                .cells
+                .iter()
+                .flat_map(|c| c.picture_overrides.iter().flatten())
+                .any(|v| !(-100..=100).contains(v))
+        {
+            return Err("畫面設定超出範圍".into());
+        }
         if self.version != 1
             || !(1..=12).contains(&self.cells.len())
             || !(2..=4).contains(&self.columns)
