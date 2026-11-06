@@ -3,6 +3,7 @@ mod app;
 mod frame_index;
 mod model;
 mod player;
+mod scrub;
 mod view;
 use eframe::egui;
 static STARTED: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();

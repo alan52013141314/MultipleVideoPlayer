@@ -31,3 +31,6 @@ cargo test --locked --bin multiple-video-player
 `cargo run --release --bin verify -- <320x180測試影片> <報告.json>` 使用兩個實際播放器，檢查獨立音量、暫停狀態及各影格的正反向定位；GPU 讀回影像與 FFmpeg 逐幀參考影像比對。測試輸出不納入 Git。
 
 舊 Python 原始碼留在 `VideoPlayer/src` 作為歷史與相容性參考，Rust 版不執行或封裝它。GPL 與第三方來源見根目錄授權說明。未宣稱在所有 Windows 10 顯示卡或任意十二條 4K 影片上流暢。
+
+效能回歸：
+`cargo run --release --bin seek_perf -- <至少18秒測試影片> <報告.json>` 在四格播放時反覆跳轉一格，記錄 GUI 間隔、其他格進度及最後跳轉位置；見 PR-011。

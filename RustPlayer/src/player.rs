@@ -37,15 +37,21 @@ struct Event {
     userdata: u64,
     data: *mut c_void,
 }
+#[repr(C)]
+struct Property {
+    name: *const c_char,
+    format: c_int,
+    data: *mut c_void,
+}
 pub struct Api {
     _lib: libloading::Library,
     create: unsafe extern "C" fn() -> Handle,
     init: unsafe extern "C" fn(Handle) -> c_int,
     destroy: unsafe extern "C" fn(Handle),
     option: unsafe extern "C" fn(Handle, *const c_char, *const c_char) -> c_int,
-    command: unsafe extern "C" fn(Handle, *const *const c_char) -> c_int,
-    get: unsafe extern "C" fn(Handle, *const c_char, c_int, *mut c_void) -> c_int,
-    set: unsafe extern "C" fn(Handle, *const c_char, c_int, *mut c_void) -> c_int,
+    command: unsafe extern "C" fn(Handle, u64, *const *const c_char) -> c_int,
+    observe: unsafe extern "C" fn(Handle, u64, *const c_char, c_int) -> c_int,
+    set: unsafe extern "C" fn(Handle, u64, *const c_char, c_int, *mut c_void) -> c_int,
     wait: unsafe extern "C" fn(Handle, f64) -> *const Event,
     error: unsafe extern "C" fn(c_int) -> *const c_char,
     render_create: unsafe extern "C" fn(*mut Handle, Handle, *mut Param) -> c_int,
@@ -76,9 +82,9 @@ impl Api {
                 init: f!("mpv_initialize"),
                 destroy: f!("mpv_terminate_destroy"),
                 option: f!("mpv_set_option_string"),
-                command: f!("mpv_command"),
-                get: f!("mpv_get_property"),
-                set: f!("mpv_set_property"),
+                command: f!("mpv_command_async"),
+                observe: f!("mpv_observe_property"),
+                set: f!("mpv_set_property_async"),
                 wait: f!("mpv_wait_event"),
                 error: f!("mpv_error_string"),
                 render_create: f!("mpv_render_context_create"),
@@ -133,6 +139,8 @@ pub struct Player {
     pub redraw: bool,
     pub has_frame: bool,
     dirty: Box<std::sync::atomic::AtomicBool>,
+    numbers: std::collections::HashMap<String, f64>,
+    paused: bool,
 }
 // egui callbacks require Send + Sync. The mutex protects access, while creation,
 // paint and destruction are all owned by eframe's single native GUI thread.
@@ -172,6 +180,20 @@ impl Player {
             if let Err(e) = api.check((api.init)(h)) {
                 (api.destroy)(h);
                 return Err(e);
+            }
+            for (key, format) in [
+                ("time-pos", 5),
+                ("duration", 5),
+                ("dwidth", 5),
+                ("dheight", 5),
+                ("volume", 5),
+                ("pause", 3),
+            ] {
+                let name = CString::new(key).unwrap();
+                if let Err(e) = api.check((api.observe)(h, 0, name.as_ptr(), format)) {
+                    (api.destroy)(h);
+                    return Err(e);
+                }
             }
             let mut render = ptr::null_mut();
             let mut init = GlInit {
@@ -218,6 +240,8 @@ impl Player {
                 redraw: true,
                 has_frame: false,
                 dirty,
+                numbers: std::collections::HashMap::new(),
+                paused: true,
             })
         }
     }
@@ -234,31 +258,27 @@ impl Player {
         let mut ptrs: Vec<_> = a.iter().map(|a| a.as_ptr()).collect();
         ptrs.push(ptr::null());
         self.api
-            .check(unsafe { (self.api.command)(self.handle, ptrs.as_ptr()) })
+            .check(unsafe { (self.api.command)(self.handle, 0, ptrs.as_ptr()) })
     }
     pub fn set(&self, key: &str, value: &str) -> Result<(), String> {
         self.command(&["set", key, value])
     }
     pub fn number(&self, key: &str) -> Option<f64> {
-        let key = CString::new(key).ok()?;
-        let mut n = 0.;
-        let r = unsafe { (self.api.get)(self.handle, key.as_ptr(), 5, &mut n as *mut _ as *mut _) };
-        if r >= 0 {
-            Some(n)
-        } else {
-            None
-        }
+        self.numbers.get(key).copied()
     }
     pub fn flag(&self, key: &str) -> bool {
-        let key = CString::new(key).unwrap();
-        let mut n: c_int = 0;
-        unsafe { (self.api.get)(self.handle, key.as_ptr(), 3, &mut n as *mut _ as *mut _) };
-        n != 0
+        key == "pause" && self.paused
     }
     pub fn set_number(&self, key: &str, mut value: f64) -> Result<(), String> {
         let k = CString::new(key).unwrap();
         self.api.check(unsafe {
-            (self.api.set)(self.handle, k.as_ptr(), 5, &mut value as *mut _ as *mut _)
+            (self.api.set)(
+                self.handle,
+                0,
+                k.as_ptr(),
+                5,
+                &mut value as *mut _ as *mut _,
+            )
         })
     }
     pub fn load(&mut self, path: &str, start: f64, paused: bool) -> Result<(), String> {
@@ -275,7 +295,9 @@ impl Player {
         ])
     }
     pub fn poll(&mut self) {
-        loop {
+        // No synchronous core calls on the GL thread: seeks may wait for this
+        // same thread to render. Consume observations instead of querying it.
+        for _ in 0..256 {
             let e = unsafe { &*(self.api.wait)(self.handle, 0.) };
             if e.id == 0 {
                 break;
@@ -283,6 +305,20 @@ impl Player {
             if e.id == 8 {
                 self.loaded = true;
                 self.redraw = true
+            }
+            if e.id == 22 && !e.data.is_null() {
+                let p = unsafe { &*(e.data as *const Property) };
+                if !p.name.is_null() {
+                    let key = unsafe { CStr::from_ptr(p.name) }.to_string_lossy();
+                    if p.format == 5 && !p.data.is_null() {
+                        self.numbers
+                            .insert(key.into_owned(), unsafe { *(p.data as *const f64) });
+                    } else if p.format == 3 && key == "pause" && !p.data.is_null() {
+                        self.paused = unsafe { *(p.data as *const c_int) } != 0;
+                    } else if p.format == 0 {
+                        self.numbers.remove(key.as_ref());
+                    }
+                }
             }
             if e.error < 0 {
                 self.error = self.api.check(e.error).err()

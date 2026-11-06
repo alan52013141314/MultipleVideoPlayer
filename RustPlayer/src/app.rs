@@ -22,6 +22,8 @@ struct Runtime {
     loading: bool,
     popup_open: bool,
     applied_picture: Option<[i32; 5]>,
+    applied_loop: Option<Option<(f64, f64)>>,
+    scrub: crate::scrub::Scrub,
     index: Vec<f64>,
     index_job: Option<crate::frame_index::Job>,
     pending_step: Option<isize>,
@@ -378,6 +380,10 @@ impl App {
         };
         if let Some(p) = self.runtime[i].player.clone() {
             let p = p.lock().unwrap();
+            if self.runtime[i].applied_loop == Some(interval) {
+                return;
+            }
+            self.runtime[i].applied_loop = Some(interval);
             let _ = p.set("ab-loop-b", "no");
             let _ = p.set("ab-loop-a", "no");
             if let Some((a, b)) = interval {
@@ -483,6 +489,7 @@ impl App {
                 self.runtime[i].pending_step = None;
                 self.runtime[i].key = v.id.clone();
                 self.runtime[i].applied_picture = None;
+                self.runtime[i].applied_loop = None;
                 self.runtime[i].time = v.current_position as f64 / 1000.;
                 self.runtime[i].duration = 0.;
                 self.runtime[i].error.clear();
@@ -1247,6 +1254,7 @@ impl App {
                 && ui.clip_rect().contains(*pos)
                 && ui.ctx().layer_id_at(*pos) == Some(ui.layer_id())
         }) {
+            self.runtime[i].scrub.reset();
             self.runtime[i].drag = Some(
                 if pos.y < y - 3. && a.is_some_and(|a| (pos.x - x(a)).abs() < 11.) {
                     1
@@ -1279,7 +1287,15 @@ impl App {
                         }
                         self.set_loop(i);
                     }
-                    _ => self.seek(i, t),
+                    _ => {
+                        let released =
+                            ui.input(|s| !s.pointer.button_down(egui::PointerButton::Primary));
+                        let now = ui.input(|s| s.time);
+                        if self.runtime[i].scrub.should_seek(t, now, released) {
+                            self.seek(i, t);
+                        }
+                        self.runtime[i].time = t;
+                    }
                 }
             }
         }
